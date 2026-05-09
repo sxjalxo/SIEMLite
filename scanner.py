@@ -6,11 +6,13 @@ A lightweight Python-based security tool that performs basic web vulnerability
 assessment including XSS, SQL Injection detection, security header analysis,
 and port scanning.
 
-Usage:
+Usage (standalone):
     python scanner.py <target_url>
 
 Example:
     python scanner.py https://example.com
+
+The module also exposes ``run_scan(url)`` so it can be imported by main.py.
 
 DISCLAIMER: This tool is for educational and authorized testing purposes only.
 Do NOT use it against websites you do not own or have explicit permission to test.
@@ -20,13 +22,18 @@ import sys
 import os
 import socket
 import time
-import re
 import urllib.parse
 from datetime import datetime
-from collections import namedtuple
 
 import requests
 from bs4 import BeautifulSoup
+
+from report import (
+    Colors, Finding, fix_encoding,
+    print_section, print_finding, print_ok, print_info, print_warn,
+    banner as report_banner,
+    generate_report,
+)
 
 # ─────────────────────────────────────────────
 # Configuration & Constants
@@ -34,18 +41,6 @@ from bs4 import BeautifulSoup
 
 REQUEST_TIMEOUT = 10  # seconds
 PORT_SCAN_TIMEOUT = 1.5  # seconds per port
-
-# ANSI color codes for terminal output
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    CYAN = "\033[96m"
-    MAGENTA = "\033[95m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RESET = "\033[0m"
-
 
 # SQL Injection payloads and corresponding error signatures
 SQL_PAYLOADS = [
@@ -166,68 +161,10 @@ PORT_MAP = {
     27017: "MongoDB",
 }
 
-# Named tuples for structured results
-Finding = namedtuple("Finding", ["category", "severity", "detail", "evidence"])
-
 
 # ─────────────────────────────────────────────
 # Utility Functions
 # ─────────────────────────────────────────────
-
-def banner():
-    """Print the tool banner."""
-    print(f"""
-{Colors.CYAN}{Colors.BOLD}
- ╔══════════════════════════════════════════════════════════╗
- ║         🛡️  Smart Web Vulnerability Scanner  🛡️          ║
- ║              Mini Burp/ZAP — Python Edition              ║
- ╚══════════════════════════════════════════════════════════╝{Colors.RESET}
-{Colors.DIM}  Educational tool — use only on authorized targets.{Colors.RESET}
-""")
-
-
-def severity_color(severity):
-    """Return ANSI color code for a severity level."""
-    return {
-        "CRITICAL": Colors.RED,
-        "HIGH": Colors.RED,
-        "MEDIUM": Colors.YELLOW,
-        "LOW": Colors.CYAN,
-        "INFO": Colors.DIM,
-    }.get(severity, Colors.RESET)
-
-
-def print_section(title, icon="🔍"):
-    """Print a formatted section header."""
-    print(f"\n{Colors.BOLD}{Colors.CYAN}{'─' * 60}")
-    print(f"  {icon}  {title}")
-    print(f"{'─' * 60}{Colors.RESET}")
-
-
-def print_finding(finding):
-    """Pretty-print a single finding."""
-    color = severity_color(finding.severity)
-    marker = "[!]" if finding.severity in ("HIGH", "CRITICAL") else "[*]"
-    print(f"  {color}{marker} [{finding.severity}] {finding.detail}{Colors.RESET}")
-    if finding.evidence:
-        for line in finding.evidence.split("\n"):
-            print(f"      {Colors.DIM}↳ {line}{Colors.RESET}")
-
-
-def print_ok(message):
-    """Print a success / info message."""
-    print(f"  {Colors.GREEN}[+] {message}{Colors.RESET}")
-
-
-def print_info(message):
-    """Print an informational message."""
-    print(f"  {Colors.DIM}[~] {message}{Colors.RESET}")
-
-
-def print_warn(message):
-    """Print a warning message."""
-    print(f"  {Colors.YELLOW}[!] {message}{Colors.RESET}")
-
 
 def get_session():
     """Return a requests.Session with a realistic User-Agent."""
@@ -317,7 +254,7 @@ def scan_sql_injection(session, url, forms, links):
     2. Injecting payloads into URL query parameters
     3. Comparing response lengths / checking for SQL error signatures
     """
-    print_section("SQL Injection Detection", "💉")
+    print_section("SQL Injection Detection", ">>>")
     findings = []
     tested = 0
 
@@ -394,8 +331,8 @@ def scan_sql_injection(session, url, forms, links):
                             detail=f"Response size anomaly for param '{param_name}' at {test_url}",
                             evidence=(
                                 f"Payload: {payload}\n"
-                                f"Baseline length: {baseline_len} → Response length: {resp_len} "
-                                f"(Δ {abs(resp_len - baseline_len)})"
+                                f"Baseline length: {baseline_len} -> Response length: {resp_len} "
+                                f"(delta {abs(resp_len - baseline_len)})"
                             ),
                         )
                         findings.append(f)
@@ -415,7 +352,7 @@ def scan_xss(session, url, forms, links):
     Test for reflected XSS by injecting payloads into forms and URL parameters,
     then checking if the payload appears unencoded in the response body.
     """
-    print_section("Cross-Site Scripting (XSS) Detection", "🕷️")
+    print_section("Cross-Site Scripting (XSS) Detection", ">>>")
     findings = []
     tested = 0
 
@@ -483,7 +420,7 @@ def scan_security_headers(session, url):
     """
     Analyze HTTP response headers for security best-practices.
     """
-    print_section("Security Headers Analysis", "🔒")
+    print_section("Security Headers Analysis", ">>>")
     findings = []
 
     try:
@@ -503,8 +440,8 @@ def scan_security_headers(session, url):
         if present:
             print_ok("Headers present:")
             for name, value in present:
-                val_preview = value[:80] + ("…" if len(value) > 80 else "")
-                print(f"      {Colors.GREEN}✓ {name}: {val_preview}{Colors.RESET}")
+                val_preview = value[:80] + ("..." if len(value) > 80 else "")
+                print(f"      {Colors.GREEN}+ {name}: {val_preview}{Colors.RESET}")
 
         # Report missing headers as findings
         if missing:
@@ -554,7 +491,7 @@ def scan_ports(hostname):
     """
     Perform a basic TCP port scan on the top common ports.
     """
-    print_section("Port Scan", "🌐")
+    print_section("Port Scan", ">>>")
     findings = []
     open_ports = []
 
@@ -568,7 +505,7 @@ def scan_ports(hostname):
             result = sock.connect_ex((hostname, port))
             if result == 0:
                 open_ports.append((port, service))
-                print(f"      {Colors.GREEN}● {port:>5}/tcp   OPEN    {service}{Colors.RESET}")
+                print(f"      {Colors.GREEN}* {port:>5}/tcp   OPEN    {service}{Colors.RESET}")
             sock.close()
         except (socket.error, OSError):
             pass
@@ -590,139 +527,82 @@ def scan_ports(hostname):
 
 
 # ─────────────────────────────────────────────
-# Report Generation
+# Public API
 # ─────────────────────────────────────────────
 
-def generate_report(url, all_findings, elapsed):
-    """Print a final summary report."""
-    print(f"\n\n{Colors.BOLD}{Colors.CYAN}{'═' * 60}")
-    print(f"  📋  SCAN REPORT — {url}")
-    print(f"{'═' * 60}{Colors.RESET}")
-    print(f"  {Colors.DIM}Scan completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Duration: {elapsed:.1f}s{Colors.RESET}\n")
+def run_scan(target_url, skip_ports=False):
+    """
+    Run the full web vulnerability scan on target_url.
 
-    # Tally by severity
-    severity_counts = {}
-    for f in all_findings:
-        severity_counts[f.severity] = severity_counts.get(f.severity, 0) + 1
+    Parameters
+    ----------
+    target_url : str
+        The URL to scan.
+    skip_ports : bool
+        If True, skip the port-scanning phase.
 
-    # Tally by category
-    category_counts = {}
-    for f in all_findings:
-        category_counts[f.category] = category_counts.get(f.category, 0) + 1
+    Returns
+    -------
+    list[Finding]
+        All findings from every scan module.
+    """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    # Summary stats
-    total = len(all_findings)
-    high = severity_counts.get("HIGH", 0) + severity_counts.get("CRITICAL", 0)
-    medium = severity_counts.get("MEDIUM", 0)
-    low = severity_counts.get("LOW", 0)
-    info = severity_counts.get("INFO", 0)
+    target = normalize_url(target_url)
+    hostname = extract_hostname(target)
 
-    print(f"  {Colors.BOLD}Total findings: {total}{Colors.RESET}")
-    if high:
-        print(f"    {Colors.RED}■ HIGH / CRITICAL : {high}{Colors.RESET}")
-    if medium:
-        print(f"    {Colors.YELLOW}■ MEDIUM          : {medium}{Colors.RESET}")
-    if low:
-        print(f"    {Colors.CYAN}■ LOW             : {low}{Colors.RESET}")
-    if info:
-        print(f"    {Colors.DIM}■ INFO            : {info}{Colors.RESET}")
+    if not hostname:
+        print_warn(f"Invalid URL: {target_url}")
+        return []
 
-    if category_counts:
-        print(f"\n  {Colors.BOLD}Findings by category:{Colors.RESET}")
-        for cat, count in sorted(category_counts.items()):
-            print(f"    • {cat}: {count}")
+    print_ok(f"Target  : {target}")
+    print_ok(f"Hostname: {hostname}")
+    print_info(f"Started : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Full listing
-    if all_findings:
-        print(f"\n  {Colors.BOLD}All findings:{Colors.RESET}")
-        for i, f in enumerate(all_findings, 1):
-            color = severity_color(f.severity)
-            print(f"    {color}{i:>3}. [{f.severity}] {f.category} — {f.detail}{Colors.RESET}")
+    session = get_session()
+    all_findings = []
 
-    # Risk assessment
-    print(f"\n  {Colors.BOLD}Risk Assessment:{Colors.RESET}")
-    if high >= 3:
-        print(f"    {Colors.RED}🔴 CRITICAL — Multiple high-severity issues found. Immediate action required.{Colors.RESET}")
-    elif high >= 1:
-        print(f"    {Colors.RED}🟠 HIGH — High-severity issues found. Remediation recommended.{Colors.RESET}")
-    elif medium >= 2:
-        print(f"    {Colors.YELLOW}🟡 MEDIUM — Several medium-severity issues. Review and harden.{Colors.RESET}")
-    elif total > 0:
-        print(f"    {Colors.CYAN}🔵 LOW — Minor issues found. Good overall posture.{Colors.RESET}")
-    else:
-        print(f"    {Colors.GREEN}🟢 CLEAN — No significant issues detected.{Colors.RESET}")
+    # Phase 1: Crawl
+    print_section("Reconnaissance -- Crawling", ">>>")
+    forms = crawl_forms(session, target)
+    links = crawl_links(session, target)
+    print_ok(f"Found {len(forms)} form(s) and {len(links)} parameterized link(s).")
 
-    print(f"\n{Colors.CYAN}{'═' * 60}{Colors.RESET}")
-    print(f"  {Colors.DIM}Disclaimer: This is a basic scanner. Always perform")
-    print(f"  thorough manual testing and use professional tools.{Colors.RESET}")
-    print(f"{Colors.CYAN}{'═' * 60}{Colors.RESET}\n")
+    # Phase 2: SQL Injection
+    all_findings.extend(scan_sql_injection(session, target, forms, links))
+
+    # Phase 3: XSS
+    all_findings.extend(scan_xss(session, target, forms, links))
+
+    # Phase 4: Security Headers
+    all_findings.extend(scan_security_headers(session, target))
+
+    # Phase 5: Port Scan
+    if not skip_ports:
+        all_findings.extend(scan_ports(hostname))
+
+    return all_findings
 
 
 # ─────────────────────────────────────────────
-# Main Entry Point
+# Standalone Entry Point
 # ─────────────────────────────────────────────
 
 def main():
-    # Fix Windows console encoding for emoji/unicode output
-    if sys.platform == "win32":
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-
-    banner()
+    fix_encoding()
+    report_banner()
 
     if len(sys.argv) < 2:
         print(f"  {Colors.RED}Usage: python scanner.py <target_url>{Colors.RESET}")
         print(f"  {Colors.DIM}Example: python scanner.py https://example.com{Colors.RESET}\n")
         sys.exit(1)
 
-    target = normalize_url(sys.argv[1])
-    hostname = extract_hostname(target)
-
-    if not hostname:
-        print(f"  {Colors.RED}[✗] Invalid URL: {sys.argv[1]}{Colors.RESET}")
-        sys.exit(1)
-
-    print(f"  {Colors.GREEN}[+] Target  : {target}{Colors.RESET}")
-    print(f"  {Colors.GREEN}[+] Hostname: {hostname}{Colors.RESET}")
-    print(f"  {Colors.DIM}[~] Started : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Colors.RESET}")
-
-    # Suppress InsecureRequestWarning for self-signed certs
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    session = get_session()
-    all_findings = []
+    target = sys.argv[1]
     start_time = time.time()
-
-    # ── Phase 1: Crawl ──────────────────────
-    print_section("Reconnaissance — Crawling", "🕸️")
-    forms = crawl_forms(session, target)
-    links = crawl_links(session, target)
-    print_ok(f"Found {len(forms)} form(s) and {len(links)} parameterized link(s).")
-
-    # ── Phase 2: SQL Injection ──────────────
-    sqli_findings = scan_sql_injection(session, target, forms, links)
-    all_findings.extend(sqli_findings)
-
-    # ── Phase 3: XSS ───────────────────────
-    xss_findings = scan_xss(session, target, forms, links)
-    all_findings.extend(xss_findings)
-
-    # ── Phase 4: Security Headers ──────────
-    header_findings = scan_security_headers(session, target)
-    all_findings.extend(header_findings)
-
-    # ── Phase 5: Port Scan ─────────────────
-    port_findings = scan_ports(hostname)
-    all_findings.extend(port_findings)
-
-    # ── Final Report ───────────────────────
+    findings = run_scan(target)
     elapsed = time.time() - start_time
-    generate_report(target, all_findings, elapsed)
+    generate_report(normalize_url(target), findings, elapsed)
 
 
 if __name__ == "__main__":
