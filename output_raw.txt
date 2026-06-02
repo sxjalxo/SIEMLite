@@ -1,0 +1,161 @@
+﻿
+[96m[1m
+ ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+ Γòæ            SIEM-Lite  //  Web Vulnerability Scanner      Γòæ
+ Γòæ         Scan  ┬╖  Analyze  ┬╖  Correlate  ┬╖  Report        Γòæ
+ ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥[0m
+[2m  Educational tool ΓÇö use only on authorized targets.[0m
+
+  [92m[+] Mode: Web Vulnerability Scan -> https://example.com[0m
+  [92m[+] Target  : https://example.com[0m
+  [92m[+] Hostname: example.com[0m
+  [2m[~] Started : 2026-05-09 12:18:46[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Reconnaissance -- Crawling
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [92m[+] Found 0 form(s) and 0 parameterized link(s).[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  SQL Injection Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [92m[+] No SQL Injection indicators detected.[0m
+  [2m[~] Tested 0 request(s) with 10 payloads.[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Cross-Site Scripting (XSS) Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [92m[+] No reflected XSS vulnerabilities detected.[0m
+  [2m[~] Tested 0 request(s) with 10 payloads.[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Security Headers Analysis
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [93m[!] Missing security headers:[0m
+  [91m[!!] [HIGH] Missing header: Content-Security-Policy[0m
+      [2m-> Prevents XSS, clickjacking, and other code injection attacks[0m
+  [93m[!] [MEDIUM] Missing header: X-Frame-Options[0m
+      [2m-> Prevents clickjacking by controlling iframe embedding[0m
+  [91m[!!] [HIGH] Missing header: Strict-Transport-Security[0m
+      [2m-> Enforces HTTPS connections to prevent downgrade attacks[0m
+  [93m[!] [MEDIUM] Missing header: X-Content-Type-Options[0m
+      [2m-> Prevents MIME-type sniffing attacks[0m
+  [96m[*] [LOW] Missing header: X-XSS-Protection[0m
+      [2m-> Legacy XSS filter (deprecated but still useful for older browsers)[0m
+  [96m[*] [LOW] Missing header: Referrer-Policy[0m
+      [2m-> Controls referrer information sent with requests[0m
+  [93m[!] [MEDIUM] Missing header: Permissions-Policy[0m
+      [2m-> Controls browser features like camera, microphone, geolocation[0m
+  [96m[*] [LOW] Server header discloses technology[0m
+      [2m-> Server: cloudflare[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Port Scan
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [2m[~] Scanning 20 common ports on example.com...[0m
+
+      [92m*    80/tcp   OPEN    HTTP[0m
+      [92m*   443/tcp   OPEN    HTTPS[0m
+      [92m*  8080/tcp   OPEN    HTTP-Alt[0m
+      [92m*  8443/tcp   OPEN    HTTPS-Alt[0m
+  [2m[~] Scanned 20 ports total, 4 open.[0m
+  [92m[+] Mode: Log Analysis -> sample_access.log[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Log Analysis
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [2m[~] Parsing sample_access.log ...[0m
+  [92m[+] Parsed 32 entries (3 skipped, 6 unique IPs).[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Brute-Force Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [91m[!!] [HIGH] Possible brute-force attack from 192.168.1.5 ΓÇö 8 failed login attempts[0m
+      [2m-> Targets: /login (x7), /admin (x1)[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Request Frequency Analysis
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [92m[+] No unusually high-frequency IPs detected.[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  404 Path Scanning Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [93m[!] [MEDIUM] Path enumeration from 172.16.0.100 ΓÇö 12 404 responses[0m
+      [2m-> Sample paths: /admin, /backup, /config, /database, /debug ... (+7 more)[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Malicious URI Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [91m[!!] [HIGH] Suspicious URI patterns from 203.0.113.50 ΓÇö 3 hit(s)[0m
+      [2m-> Types: Path traversal (x1), OS command / file access (x1), XSS attempt (x1)[0m
+      [2m-> Sample: /view?file=../../../etc/passwd[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Web Shell Access Detection
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [91m[!!] [HIGH] Possible web-shell access from 198.51.100.20 ΓÇö 4 hit(s)[0m
+      [2m-> Paths: /shell.php, /cmd.php, /c99.php[0m
+
+[1m[96mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  >>>  Threat Correlation Engine
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[0m
+  [2m[~] Cross-referencing scanner results with log analysis ...[0m
+  [95m[!!!] [CRITICAL] Path enumeration followed by web-shell access detected[0m
+      [2m-> Logs show both directory scanning (404 bursts) AND web-shell file access.[0m
+      [2m-> Action: Investigate immediately ΓÇö possible server compromise.[0m
+  [93m[!] [MEDIUM] HTTP port open without HSTS ΓÇö vulnerable to downgrade attacks[0m
+      [2m-> Port 80 is open AND Strict-Transport-Security header is missing.[0m
+      [2m-> Action: Enable HSTS and redirect all HTTP to HTTPS.[0m
+
+
+[1m[96m============================================================
+  SCAN REPORT ΓÇö https://example.com + Logs: sample_access.log
+============================================================[0m
+  [2mCompleted at: 2026-05-09 12:19:10
+  Duration: 24.7s
+[0m
+  [1mTotal findings: 18[0m
+    [95mΓûá CRITICAL : 1[0m
+    [91mΓûá HIGH     : 5[0m
+    [93mΓûá MEDIUM   : 5[0m
+    [96mΓûá LOW      : 3[0m
+    [2mΓûá INFO     : 4[0m
+
+  [1mFindings by category:[0m
+    - 404 Scanning: 1
+    - Brute Force: 1
+    - Correlation: 2
+    - Malicious URI: 1
+    - Port Scan: 4
+    - Security Headers: 8
+    - Web Shell: 1
+
+  [1mAll findings:[0m
+    [95m  1. [!!!] [CRITICAL] Correlation ΓÇö Path enumeration followed by web-shell access detected[0m
+    [91m  2. [!!] [HIGH] Security Headers ΓÇö Missing header: Content-Security-Policy[0m
+    [91m  3. [!!] [HIGH] Security Headers ΓÇö Missing header: Strict-Transport-Security[0m
+    [91m  4. [!!] [HIGH] Brute Force ΓÇö Possible brute-force attack from 192.168.1.5 ΓÇö 8 failed login attempts[0m
+    [91m  5. [!!] [HIGH] Malicious URI ΓÇö Suspicious URI patterns from 203.0.113.50 ΓÇö 3 hit(s)[0m
+    [91m  6. [!!] [HIGH] Web Shell ΓÇö Possible web-shell access from 198.51.100.20 ΓÇö 4 hit(s)[0m
+    [93m  7. [!] [MEDIUM] Security Headers ΓÇö Missing header: X-Frame-Options[0m
+    [93m  8. [!] [MEDIUM] Security Headers ΓÇö Missing header: X-Content-Type-Options[0m
+    [93m  9. [!] [MEDIUM] Security Headers ΓÇö Missing header: Permissions-Policy[0m
+    [93m 10. [!] [MEDIUM] 404 Scanning ΓÇö Path enumeration from 172.16.0.100 ΓÇö 12 404 responses[0m
+    [93m 11. [!] [MEDIUM] Correlation ΓÇö HTTP port open without HSTS ΓÇö vulnerable to downgrade attacks[0m
+    [96m 12. [*] [LOW] Security Headers ΓÇö Missing header: X-XSS-Protection[0m
+    [96m 13. [*] [LOW] Security Headers ΓÇö Missing header: Referrer-Policy[0m
+    [96m 14. [*] [LOW] Security Headers ΓÇö Server header discloses technology[0m
+    [2m 15. [~] [INFO] Port Scan ΓÇö Open port: 80/tcp (HTTP)[0m
+    [2m 16. [~] [INFO] Port Scan ΓÇö Open port: 443/tcp (HTTPS)[0m
+    [2m 17. [~] [INFO] Port Scan ΓÇö Open port: 8080/tcp (HTTP-Alt)[0m
+    [2m 18. [~] [INFO] Port Scan ΓÇö Open port: 8443/tcp (HTTPS-Alt)[0m
+
+  [1mRisk Assessment:[0m
+    [95m[!!!] CRITICAL ΓÇö Critical correlated threats detected. Immediate action required.[0m
+
+[96m============================================================[0m
+  [2mDisclaimer: This is a basic scanner. Always perform
+  thorough manual testing and use professional tools.[0m
+[96m============================================================[0m
+

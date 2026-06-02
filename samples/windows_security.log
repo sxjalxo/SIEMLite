@@ -1,0 +1,31 @@
+TimeGenerated,EventID,SourceName,Category,UserName,ComputerName,Message
+2026-05-09 10:00:01,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 203.0.113.50
+2026-05-09 10:00:02,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 203.0.113.50
+2026-05-09 10:00:03,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 203.0.113.50
+2026-05-09 10:00:04,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 203.0.113.50
+2026-05-09 10:00:05,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 203.0.113.50
+2026-05-09 10:00:06,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: admin Source IP: 203.0.113.50
+2026-05-09 10:00:07,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: admin Source IP: 203.0.113.50
+2026-05-09 10:00:08,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: admin Source IP: 203.0.113.50
+2026-05-09 10:00:09,4624,Microsoft-Windows-Security-Auditing,Logon,administrator,WORKSTATION1,An account was successfully logged on. Source IP: 203.0.113.50
+2026-05-09 10:00:10,4672,Microsoft-Windows-Security-Auditing,Special Logon,administrator,WORKSTATION1,Special privileges assigned to new logon.
+2026-05-09 10:01:00,4624,Microsoft-Windows-Security-Auditing,Logon,jsmith,WORKSTATION2,An account was successfully logged on. Source IP: 10.0.0.15
+2026-05-09 10:02:00,4624,Microsoft-Windows-Security-Auditing,Logon,deploy,SERVER1,An account was successfully logged on. Source IP: 10.0.0.5
+2026-05-09 10:03:00,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: sa Source IP: 198.51.100.20
+2026-05-09 10:03:01,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: sa Source IP: 198.51.100.20
+2026-05-09 10:03:02,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: sa Source IP: 198.51.100.20
+2026-05-09 10:03:03,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: backup Source IP: 198.51.100.20
+2026-05-09 10:03:04,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: backup Source IP: 198.51.100.20
+2026-05-09 10:03:05,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,SERVER1,An account failed to log on. User: test Source IP: 198.51.100.20
+2026-05-09 10:04:00,4720,Microsoft-Windows-Security-Auditing,Account Management,administrator,WORKSTATION1,A user account was created. New Account: backdoor_user
+2026-05-09 10:04:30,4672,Microsoft-Windows-Security-Auditing,Special Logon,backdoor_user,WORKSTATION1,Special privileges assigned to new logon.
+2026-05-09 10:05:00,4688,Microsoft-Windows-Security-Auditing,Process Creation,backdoor_user,WORKSTATION1,A new process has been created. Process: cmd.exe CommandLine: cmd.exe /c net user
+2026-05-09 10:05:30,4688,Microsoft-Windows-Security-Auditing,Process Creation,backdoor_user,WORKSTATION1,A new process has been created. Process: powershell.exe CommandLine: powershell -enc SQBFAFgA
+2026-05-09 10:06:00,4634,Microsoft-Windows-Security-Auditing,Logoff,jsmith,WORKSTATION2,An account was logged off.
+2026-05-09 10:10:00,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 172.16.0.100
+2026-05-09 10:10:01,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: administrator Source IP: 172.16.0.100
+2026-05-09 10:10:02,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: guest Source IP: 172.16.0.100
+2026-05-09 10:10:03,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: guest Source IP: 172.16.0.100
+2026-05-09 10:10:04,4625,Microsoft-Windows-Security-Auditing,Logon,SYSTEM,WORKSTATION1,An account failed to log on. User: user Source IP: 172.16.0.100
+2026-05-09 10:15:00,4624,Microsoft-Windows-Security-Auditing,Logon,deploy,SERVER1,An account was successfully logged on. Source IP: 10.0.0.5
+2026-05-09 10:20:00,4634,Microsoft-Windows-Security-Auditing,Logoff,deploy,SERVER1,An account was logged off.
