@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 
-from report import Colors, print_ok, print_warn, print_error, print_info
+from core.report import Colors, print_ok, print_warn, print_error, print_info
 
 
 # ─────────────────────────────────────────────

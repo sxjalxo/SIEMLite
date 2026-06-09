@@ -23,17 +23,17 @@ import time
 import json
 from datetime import datetime
 
-from report import (
+from core.report import (
     Colors, Finding, fix_encoding, banner,
     print_section, print_finding, print_ok, print_info, print_warn,
     generate_report,
 )
-from scanner import run_scan
-from log_analyzer import analyze_log
-from database import (
+from core.scanner import run_scan
+from core.log_analyzer import analyze_log
+from core.database import (
     store_correlation, store_alerts_from_findings, init_database
 )
-from alerting import send_alert_from_finding
+from core.alerting import send_alert_from_finding
 
 # ─────────────────────────────────────────────
 # Advanced Correlation Engine

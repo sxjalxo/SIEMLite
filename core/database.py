@@ -11,13 +11,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
-from mitre_attack import enrich_alert_with_mitre
+from modules.mitre_mapping import enrich_alert_with_mitre
 
 # ─────────────────────────────────────────────
 # Database Configuration
 # ─────────────────────────────────────────────
 
-DB_PATH = Path("siem_lite.db")
+DB_PATH = Path("db/siem_lite.db")
 
 
 # ─────────────────────────────────────────────

@@ -21,8 +21,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
-from report import Colors, print_ok, print_warn, print_error, print_info
-from database import get_connection, init_database
+from core.report import Colors, print_ok, print_warn, print_error, print_info
+from core.database import get_connection, init_database
 
 
 # ─────────────────────────────────────────────
@@ -34,7 +34,7 @@ ABUSEIPDB_API_KEY = ""  # Set your API key here or in config file
 ABUSEIPDB_API_URL = "https://api.abuseipdb.com/api/v2/check"
 
 # Local blacklist file
-BLACKLIST_FILE = Path("blacklist.json")
+BLACKLIST_FILE = Path("data/blacklist.json")
 
 # Cache duration for IP reputation checks (hours)
 CACHE_DURATION_HOURS = 24

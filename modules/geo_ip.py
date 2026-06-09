@@ -29,9 +29,9 @@ try:
 except ImportError:
     GEOIP_AVAILABLE = False
 
-from report import Colors, print_ok, print_warn, print_error, print_info
-from database import get_logs_by_ip, store_alert, init_database
-from alerting import send_alert
+from core.report import Colors, print_ok, print_warn, print_error, print_info
+from core.database import get_logs_by_ip, store_alert, init_database
+from core.alerting import send_alert
 
 
 # ─────────────────────────────────────────────
@@ -39,7 +39,7 @@ from alerting import send_alert
 # ─────────────────────────────────────────────
 
 # MaxMind GeoIP2 database path (will be downloaded if not present)
-GEOIP_DB_PATH = "GeoLite2-City.mmdb"
+GEOIP_DB_PATH = "data/GeoLite2-City.mmdb"
 
 # Impossible travel thresholds
 IMPOSSIBLE_TRAVEL_DISTANCE_KM = 1000  # Distance threshold for impossible travel

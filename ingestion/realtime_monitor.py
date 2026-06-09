@@ -24,14 +24,14 @@ try:
 except ImportError:
     WATCHDOG_AVAILABLE = False
 
-from report import Colors, print_ok, print_info, print_warn, print_error
-from log_analyzer import (
+from core.report import Colors, print_ok, print_info, print_warn, print_error
+from core.log_analyzer import (
     LOG_PATTERN, AUTH_ENDPOINTS, BRUTE_FORCE_THRESHOLD,
     HIGH_FREQ_THRESHOLD, SCAN_404_THRESHOLD, SHELL_PATTERNS_THRESHOLD,
     SUSPICIOUS_URI_PATTERNS, WEBSHELL_NAMES
 )
-from database import store_log_entry, store_alert, init_database
-from alerting import send_alert
+from core.database import store_log_entry, store_alert, init_database
+from core.alerting import send_alert
 
 
 # ─────────────────────────────────────────────

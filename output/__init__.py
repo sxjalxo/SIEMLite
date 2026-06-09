@@ -1,0 +1,1 @@
+"""SIEM-Lite output files."""

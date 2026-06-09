@@ -23,7 +23,7 @@ A lightweight Python-based security tool that combines **web vulnerability scann
 | **Log Analyzer** | Web shell access detection | HIGH |
 | **Correlation** | Cross-module threat correlation (14 rules with scoring) | CRITICAL |
 
-### SIEM - Inspired Features
+### Advanced Features
 
 | Feature | Description |
 |---|---|
@@ -32,7 +32,6 @@ A lightweight Python-based security tool that combines **web vulnerability scann
 | **Persistent Storage** | SQLite database for logs, alerts, correlations, and statistics |
 | **CLI Dashboard** | Interactive security metrics dashboard with rich library |
 | **Geo-IP Tracking** | IP geolocation and impossible travel detection |
-| **Advanced Correlation** | Time-window based, multi-source, severity scoring |
 | **MITRE ATT&CK** | Automatic mapping of detections to MITRE techniques |
 | **Threat Intelligence** | AbuseIPDB API integration and local blacklist |
 | **Anomaly Detection** | Statistical analysis (Z-score) for request spikes |
@@ -61,10 +60,10 @@ pip install -r requirements.txt
 python main.py --scan https://example.com
 
 # Analyze an access log file
-python main.py --analyze access.log
+python main.py --analyze data/sample_access.log
 
 # Both: scan + analyze + auto-correlate findings
-python main.py --scan https://example.com --analyze access.log
+python main.py --scan https://example.com --analyze data/sample_access.log
 
 # Quick mode (skip deep scanning)
 python main.py --scan https://example.com --quick
@@ -76,9 +75,9 @@ python main.py --scan https://example.com --output report.json
 python main.py --scan https://example.com --no-ports
 
 # Individual modules still work standalone
-python scanner.py https://example.com
-python log_analyzer.py access.log
-python dashboard.py
+python -m core.scanner https://example.com
+python -m core.log_analyzer data/sample_access.log
+python -m ui.dashboard
 ```
 
 ---
@@ -148,26 +147,43 @@ If:  Impossible travel  AND  brute-force attacks
 ```
 SIEMLite/
 ├── main.py              # Unified CLI + correlation engine
-├── scanner.py           # Web vulnerability scanner module
-├── log_analyzer.py      # Access log analyzer module
-├── realtime_monitor.py  # Real-time log monitoring with watchdog
-├── dashboard.py         # Interactive CLI dashboard
-├── alerting.py          # Multi-channel alerting system
-├── database.py          # SQLite persistent storage
-├── geoip.py             # Geo-IP tracking & impossible travel
-├── mitre_attack.py      # MITRE ATT&CK mapping
-├── threat_intel.py      # Threat intelligence (AbuseIPDB, blacklist)
-├── anomaly_detection.py # Statistical anomaly detection
-├── rule_loader.py       # Plugin-based custom rule system
-├── report.py            # Shared utilities (colors, severity, reporting)
+├── README.md            # This file
 ├── requirements.txt     # Python dependencies
-├── sample_access.log    # Sample log file for testing
-├── rules/               # Custom detection rules directory
-│   └── example_rule.py # Example custom rule
-├── siem_lite.db         # SQLite database (auto-created)
-├── alerts.log           # Alert log file (auto-created)
-├── alerts.json          # Alert JSON file (auto-created)
-└── README.md            # This file
+├── LICENSE              # MIT License
+│
+├── core/                # Core security modules
+│   ├── scanner.py       # Web vulnerability scanner
+│   ├── log_analyzer.py  # Access log analyzer
+│   ├── report.py        # Shared utilities (colors, severity, reporting)
+│   ├── database.py      # SQLite persistent storage
+│   ├── alerting.py      # Multi-channel alerting system
+│   └── rule_loader.py   # Plugin-based custom rule system
+│
+├── modules/             # Advanced detection modules
+│   ├── geo_ip.py        # Geo-IP tracking & impossible travel
+│   ├── mitre_mapping.py # MITRE ATT&CK mapping
+│   ├── threat_intel.py  # Threat intelligence (AbuseIPDB, blacklist)
+│   └── anomaly_detection.py # Statistical anomaly detection
+│
+├── ingestion/           # Data ingestion modules
+│   └── realtime_monitor.py # Real-time log monitoring with watchdog
+│
+├── ui/                  # User interface modules
+│   └── dashboard.py     # Interactive CLI dashboard
+│
+├── rules/               # Custom detection rules
+│   └── example_rule.py  # Example custom rule
+│
+├── data/                # Data files
+│   ├── sample_access.log # Sample log file for testing
+│   └── blacklist.json   # Local IP blacklist
+│
+├── output/              # Output files
+│   ├── alerts.log       # Alert log file (auto-created)
+│   └── alerts.json      # Alert JSON file (auto-created)
+│
+└── db/                  # Database files
+    └── siem_lite.db     # SQLite database (auto-created)
 ```
 
 ---
@@ -191,18 +207,18 @@ SIEMLite/
 
 ### Alerting Configuration
 
-Edit `alerting.py` to configure:
+Edit `core/alerting.py` to configure:
 - Email alerts (SMTP settings)
 - Desktop notifications
-- Alert file paths
+- Alert file paths (output/alerts.log, output/alerts.json)
 
 ### Geo-IP Configuration
 
-Download GeoLite2-City.mmdb from MaxMind and place in project directory for Geo-IP features.
+Download GeoLite2-City.mmdb from MaxMind and place in `data/` directory for Geo-IP features.
 
 ### Threat Intelligence
 
-Configure AbuseIPDB API key in `threat_intel.py` for IP reputation checking.
+Configure AbuseIPDB API key in `modules/threat_intel.py` for IP reputation checking. Local blacklist is stored in `data/blacklist.json`.
 
 ### Custom Rules
 

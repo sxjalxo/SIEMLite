@@ -22,20 +22,20 @@ import os
 from collections import defaultdict, Counter
 from datetime import datetime
 
-from report import (
+from core.report import (
     Colors, Finding,
     print_section, print_finding, print_ok, print_info, print_warn, print_error,
     fix_encoding,
 )
-from database import (
+from core.database import (
     store_log_entry, store_log_entries, store_alert, store_alerts_from_findings,
     init_database
 )
-from alerting import send_alert_from_finding
-from geoip import analyze_log_geoip, init_geoip
-from threat_intel import analyze_ips_threat_intel
-from anomaly_detection import detect_all_anomalies, convert_anomalies_to_findings
-from rule_loader import load_rules, run_custom_rules, convert_custom_findings_to_standard
+from core.alerting import send_alert_from_finding
+from modules.geo_ip import analyze_log_geoip, init_geoip
+from modules.threat_intel import analyze_ips_threat_intel
+from modules.anomaly_detection import detect_all_anomalies, convert_anomalies_to_findings
+from core.rule_loader import load_rules, run_custom_rules, convert_custom_findings_to_standard
 
 # ─────────────────────────────────────────────
 # Configuration

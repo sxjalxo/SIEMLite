@@ -28,16 +28,16 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-from report import (
+from core.report import (
     Colors, Finding, fix_encoding,
     print_section, print_finding, print_ok, print_info, print_warn,
     banner as report_banner,
     generate_report,
 )
-from database import (
+from core.database import (
     store_alert, store_alerts_from_findings, store_scan, init_database
 )
-from alerting import send_alert_from_finding
+from core.alerting import send_alert_from_finding
 
 # ─────────────────────────────────────────────
 # Configuration & Constants

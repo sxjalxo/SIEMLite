@@ -32,8 +32,8 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
 
-from report import Colors, print_ok, print_info, print_warn, print_error, fix_encoding
-from database import (
+from core.report import Colors, print_ok, print_info, print_warn, print_error, fix_encoding
+from core.database import (
     get_alerts, get_alert_stats, get_top_ips, get_status_distribution,
     get_alert_timeline, get_scans, get_log_stats, init_database
 )

@@ -25,7 +25,7 @@ import inspect
 from pathlib import Path
 from typing import List, Dict, Any, Callable
 
-from report import Colors, print_ok, print_warn, print_error, print_info
+from core.report import Colors, print_ok, print_warn, print_error, print_info
 
 
 # ─────────────────────────────────────────────

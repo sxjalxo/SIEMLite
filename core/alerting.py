@@ -18,15 +18,15 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from report import Colors, print_ok, print_warn, print_error
+from core.report import Colors, print_ok, print_warn, print_error
 
 
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
 
-ALERT_LOG_FILE = Path("alerts.log")
-ALERT_JSON_FILE = Path("alerts.json")
+ALERT_LOG_FILE = Path("output/alerts.log")
+ALERT_JSON_FILE = Path("output/alerts.json")
 
 # Email configuration (can be overridden via config file)
 EMAIL_CONFIG = {
