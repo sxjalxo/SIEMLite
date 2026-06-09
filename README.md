@@ -1,4 +1,4 @@
-# SIEM-Lite v1.0 — Security Monitoring & Vulnerability Toolkit
+# SIEM-Lite v1.0
 
 A lightweight Python-based security tool that combines **web vulnerability scanning**, **log analysis**, **cross-module threat correlation**, and **SIEM - inspired features** into a unified CLI.
 
@@ -48,7 +48,7 @@ A lightweight Python-based security tool that combines **web vulnerability scann
 ### Installation
 
 ```bash
-git clone https://github.com/sxjalxo/SIEMLite-Security-Monitoring-Vulnerability-Toolkit.git
+git clone "https://github.com/sxjalxo/SIEMLite.git"
 cd SIEMLite
 pip install -r requirements.txt
 ```
