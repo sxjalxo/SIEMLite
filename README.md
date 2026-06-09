@@ -226,6 +226,12 @@ Add custom detection rules in the `rules/` directory. Each rule file must have a
 
 ---
 
+## 📸 Demo
+
+See `/docs/` for screenshots and sample outputs.
+
+---
+
 ## License
 
 MIT License — free for personal and educational use.
