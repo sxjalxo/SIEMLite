@@ -7,3 +7,30 @@ build/
 venv/
 .vscode/
 .idea/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+siem_lite.db
+
+# Alert files
+alerts.log
+alerts.json
+blacklist.json
+
+# GeoIP database
+GeoLite2-City.mmdb
+
+# Report outputs
+report.json
+*.report
+
+# Python cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db

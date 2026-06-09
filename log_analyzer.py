@@ -27,6 +27,15 @@ from report import (
     print_section, print_finding, print_ok, print_info, print_warn, print_error,
     fix_encoding,
 )
+from database import (
+    store_log_entry, store_log_entries, store_alert, store_alerts_from_findings,
+    init_database
+)
+from alerting import send_alert_from_finding
+from geoip import analyze_log_geoip, init_geoip
+from threat_intel import analyze_ips_threat_intel
+from anomaly_detection import detect_all_anomalies, convert_anomalies_to_findings
+from rule_loader import load_rules, run_custom_rules, convert_custom_findings_to_standard
 
 # ─────────────────────────────────────────────
 # Configuration
@@ -246,9 +255,24 @@ def detect_webshell_access(entries):
 # Public API
 # ─────────────────────────────────────────────
 
-def analyze_log(filepath):
+def analyze_log(filepath, store_to_db=True, enable_geoip=True, enable_threat_intel=True, enable_anomaly_detection=True, enable_custom_rules=True):
     """
     Run all log-analysis detections on the given file.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the log file
+    store_to_db : bool
+        Whether to store entries and alerts to the database
+    enable_geoip : bool
+        Whether to enable GeoIP analysis
+    enable_threat_intel : bool
+        Whether to enable threat intelligence analysis
+    enable_anomaly_detection : bool
+        Whether to enable statistical anomaly detection
+    enable_custom_rules : bool
+        Whether to enable custom rules from rules/ directory
 
     Returns
     -------
@@ -262,6 +286,10 @@ def analyze_log(filepath):
     if not os.path.isfile(filepath):
         print_error(f"File not found: {filepath}")
         return [], {}
+
+    # Initialize database if storing
+    if store_to_db:
+        init_database()
 
     print_info(f"Parsing {filepath} ...")
     entries, skipped = parse_log_file(filepath)
@@ -279,6 +307,12 @@ def analyze_log(filepath):
     if not entries:
         print_warn("No parseable log entries found. Check format (Apache/Nginx combined).")
         return [], stats
+
+    # Store log entries to database
+    if store_to_db:
+        print_info("Storing log entries to database...")
+        stored_count = store_log_entries(entries, source_file=filepath)
+        print_ok(f"Stored {stored_count} log entries to database.")
 
     all_findings = []
 
@@ -327,6 +361,99 @@ def analyze_log(filepath):
             print_finding(f)
     else:
         print_ok("No web-shell access patterns detected.")
+
+    # GeoIP Analysis
+    if enable_geoip:
+        print_section("GeoIP Analysis", ">>>")
+        if init_geoip():
+            geoip_alerts = analyze_log_geoip(entries, store_to_db=store_to_db)
+            # Convert geoip alerts to Finding objects
+            for alert in geoip_alerts:
+                from report import Finding
+                f = Finding(
+                    category=alert["category"],
+                    severity=alert["severity"],
+                    detail=alert["detail"],
+                    evidence=alert["evidence"]
+                )
+                all_findings.append(f)
+                print_finding(f)
+        else:
+            print_warn("GeoIP database not available, skipping GeoIP analysis.")
+
+    # Threat Intelligence Analysis
+    if enable_threat_intel:
+        print_section("Threat Intelligence Analysis", ">>>")
+        unique_ip_list = list(set(e["ip"] for e in entries))
+        print_info(f"Checking {len(unique_ip_list)} unique IPs against threat intelligence sources...")
+        threat_results = analyze_ips_threat_intel(unique_ip_list, auto_block=False)
+        
+        # Generate findings for blacklisted IPs
+        blacklisted_ips = [r for r in threat_results if r.get("blacklisted")]
+        for result in blacklisted_ips:
+            from report import Finding
+            f = Finding(
+                category="Threat Intelligence",
+                severity="HIGH",
+                detail=f"Blacklisted IP detected: {result['ip']}",
+                evidence=f"Confidence score: {result.get('confidence_score', 0)}, Sources: {', '.join(result.get('sources', []))}"
+            )
+            all_findings.append(f)
+            print_finding(f)
+        
+        if blacklisted_ips:
+            print_ok(f"Found {len(blacklisted_ips)} blacklisted IPs")
+        else:
+            print_ok("No blacklisted IPs detected")
+
+    # Anomaly Detection
+    if enable_anomaly_detection:
+        print_section("Anomaly Detection", ">>>")
+        print_info("Running statistical anomaly detection...")
+        anomalies = detect_all_anomalies(entries)
+        anomaly_findings = convert_anomalies_to_findings(anomalies)
+        
+        if anomaly_findings:
+            all_findings.extend(anomaly_findings)
+            for f in anomaly_findings:
+                print_finding(f)
+            print_ok(f"Detected {len(anomaly_findings)} anomalies")
+        else:
+            print_ok("No statistical anomalies detected")
+
+    # Custom Rules
+    if enable_custom_rules:
+        print_section("Custom Rules", ">>>")
+        custom_rules = load_rules()
+        if custom_rules:
+            print_info(f"Running {len(custom_rules)} custom rule(s)...")
+            custom_findings = run_custom_rules(entries, custom_rules)
+            if custom_findings:
+                standard_findings = convert_custom_findings_to_standard(custom_findings)
+                all_findings.extend(standard_findings)
+                for f in standard_findings:
+                    print_finding(f)
+                print_ok(f"Custom rules found {len(standard_findings)} issue(s)")
+            else:
+                print_ok("Custom rules found no issues")
+        else:
+            print_info("No custom rules found in rules/ directory")
+
+    # Store alerts to database
+    if store_to_db and all_findings:
+        print_info("Storing alerts to database...")
+        alert_ids = store_alerts_from_findings(all_findings, source="log_analyzer")
+        print_ok(f"Stored {len(alert_ids)} alerts to database.")
+
+    # Send alerts for high-severity findings
+    print_info("Sending alerts for high-severity findings...")
+    alerts_sent = 0
+    for f in all_findings:
+        if f.severity in ["CRITICAL", "HIGH"]:
+            results = send_alert_from_finding(f, channels=["file", "json"])
+            if results.get("file") or results.get("json"):
+                alerts_sent += 1
+    print_ok(f"Sent {alerts_sent} alerts to notification channels.")
 
     return all_findings, stats
 

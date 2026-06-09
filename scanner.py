@@ -34,6 +34,10 @@ from report import (
     banner as report_banner,
     generate_report,
 )
+from database import (
+    store_alert, store_alerts_from_findings, store_scan, init_database
+)
+from alerting import send_alert_from_finding
 
 # ─────────────────────────────────────────────
 # Configuration & Constants
@@ -530,7 +534,7 @@ def scan_ports(hostname):
 # Public API
 # ─────────────────────────────────────────────
 
-def run_scan(target_url, skip_ports=False):
+def run_scan(target_url, skip_ports=False, store_to_db=True):
     """
     Run the full web vulnerability scan on target_url.
 
@@ -540,6 +544,8 @@ def run_scan(target_url, skip_ports=False):
         The URL to scan.
     skip_ports : bool
         If True, skip the port-scanning phase.
+    store_to_db : bool
+        Whether to store results to the database.
 
     Returns
     -------
@@ -548,6 +554,10 @@ def run_scan(target_url, skip_ports=False):
     """
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    # Initialize database if storing
+    if store_to_db:
+        init_database()
 
     target = normalize_url(target_url)
     hostname = extract_hostname(target)
@@ -581,6 +591,43 @@ def run_scan(target_url, skip_ports=False):
     # Phase 5: Port Scan
     if not skip_ports:
         all_findings.extend(scan_ports(hostname))
+
+    # Store scan results and alerts to database
+    if store_to_db:
+        print_info("Storing scan results to database...")
+        
+        # Count severities
+        severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
+        for f in all_findings:
+            severity_counts[f.severity] = severity_counts.get(f.severity, 0) + 1
+        
+        # Store scan metadata
+        scan_config = {"skip_ports": skip_ports}
+        store_scan(
+            target_url=target,
+            total_findings=len(all_findings),
+            critical_count=severity_counts["CRITICAL"],
+            high_count=severity_counts["HIGH"],
+            medium_count=severity_counts["MEDIUM"],
+            low_count=severity_counts["LOW"],
+            info_count=severity_counts["INFO"],
+            duration_seconds=0,  # Will be updated by caller
+            scan_config=scan_config
+        )
+        
+        # Store alerts
+        alert_ids = store_alerts_from_findings(all_findings, source="scanner")
+        print_ok(f"Stored {len(alert_ids)} scan alerts to database.")
+        
+        # Send alerts for high-severity findings
+        print_info("Sending alerts for high-severity findings...")
+        alerts_sent = 0
+        for f in all_findings:
+            if f.severity in ["CRITICAL", "HIGH"]:
+                results = send_alert_from_finding(f, channels=["file", "json"])
+                if results.get("file") or results.get("json"):
+                    alerts_sent += 1
+        print_ok(f"Sent {alerts_sent} alerts to notification channels.")
 
     return all_findings
 

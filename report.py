@@ -129,7 +129,7 @@ def banner():
     print(f"""
 {Colors.CYAN}{Colors.BOLD}
  ╔══════════════════════════════════════════════════════════╗
- ║            SIEM-Lite  //  Web Vulnerability Scanner      ║
+ ║            SIEM-Lite v1.0  //  Security Monitoring Toolkit ║
  ║         Scan  ·  Analyze  ·  Correlate  ·  Report        ║
  ╚══════════════════════════════════════════════════════════╝{Colors.RESET}
 {Colors.DIM}  Educational tool — use only on authorized targets.{Colors.RESET}
