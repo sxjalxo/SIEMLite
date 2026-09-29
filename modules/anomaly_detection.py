@@ -445,8 +445,8 @@ def convert_anomalies_to_findings(anomalies: Dict[str, Any]) -> List:
     list[Finding]
         List of Finding objects
     """
-    from report import Finding
-    
+    from core.report import Finding
+
     findings = []
     
     for anomaly_type, anomaly_list in anomalies.items():
@@ -470,7 +470,7 @@ def convert_anomalies_to_findings(anomalies: Dict[str, Any]) -> List:
 
 def main():
     """Test anomaly detection module."""
-    from report import fix_encoding
+    from core.report import fix_encoding
     fix_encoding()
     
     print("Anomaly Detection Test")

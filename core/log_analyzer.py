@@ -369,7 +369,7 @@ def analyze_log(filepath, store_to_db=True, enable_geoip=True, enable_threat_int
             geoip_alerts = analyze_log_geoip(entries, store_to_db=store_to_db)
             # Convert geoip alerts to Finding objects
             for alert in geoip_alerts:
-                from report import Finding
+                from core.report import Finding
                 f = Finding(
                     category=alert["category"],
                     severity=alert["severity"],
@@ -391,7 +391,7 @@ def analyze_log(filepath, store_to_db=True, enable_geoip=True, enable_threat_int
         # Generate findings for blacklisted IPs
         blacklisted_ips = [r for r in threat_results if r.get("blacklisted")]
         for result in blacklisted_ips:
-            from report import Finding
+            from core.report import Finding
             f = Finding(
                 category="Threat Intelligence",
                 severity="HIGH",
@@ -470,7 +470,7 @@ def main():
         print(f"  {Colors.DIM}Example: python log_analyzer.py access.log{Colors.RESET}\n")
         sys.exit(1)
 
-    from report import generate_report
+    from core.report import generate_report
     filepath = sys.argv[1]
     findings, stats = analyze_log(filepath)
     generate_report(f"Log Analysis — {filepath}", findings)

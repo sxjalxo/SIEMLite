@@ -455,9 +455,9 @@ def configure_abuseipdb(api_key: str):
 
 def main():
     """Test threat intelligence module."""
-    from report import fix_encoding
+    from core.report import fix_encoding
     fix_encoding()
-    
+
     if len(sys.argv) < 2:
         print(f"{Colors.RED}Usage: python threat_intel.py <ip_address>{Colors.RESET}")
         print(f"{Colors.DIM}Example: python threat_intel.py 8.8.8.8{Colors.RESET}")

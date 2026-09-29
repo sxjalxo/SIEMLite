@@ -453,9 +453,9 @@ def clear_geoip_cache():
 # ─────────────────────────────────────────────
 
 def main():
-    from report import fix_encoding
+    from core.report import fix_encoding
     fix_encoding()
-    
+
     if len(sys.argv) < 2:
         print(f"{Colors.RED}Usage: python geoip.py <ip_address>{Colors.RESET}")
         print(f"{Colors.DIM}Example: python geoip.py 8.8.8.8{Colors.RESET}")

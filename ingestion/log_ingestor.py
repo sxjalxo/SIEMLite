@@ -26,7 +26,7 @@ import io
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
-from report import (
+from core.report import (
     Colors, print_section, print_ok, print_info, print_warn, print_error,
     fix_encoding,
 )

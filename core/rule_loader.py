@@ -219,8 +219,8 @@ def convert_custom_findings_to_standard(findings: List[Dict[str, Any]]) -> List:
     list[Finding]
         List of Finding objects
     """
-    from report import Finding
-    
+    from core.report import Finding
+
     standard_findings = []
     
     for finding in findings:
@@ -293,7 +293,7 @@ def get_rule_info(rule_name: str) -> Dict[str, Any]:
 
 def main():
     """Test rule loader."""
-    from report import fix_encoding
+    from core.report import fix_encoding
     fix_encoding()
     
     print("Custom Rule System Test")

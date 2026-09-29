@@ -13,7 +13,7 @@ from datetime import timedelta
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field, asdict
 
-from report import Colors, Finding
+from core.report import Colors, Finding
 
 
 # ─────────────────────────────────────────────
