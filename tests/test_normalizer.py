@@ -2,8 +2,16 @@ import json
 import unittest
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
-from ingestion.normalizer import EVENT_FIELDS, NormalizedEvent
+from ingestion.normalizer import (
+    EVENT_FIELDS,
+    NormalizedEvent,
+    _parse_system_time,
+    parse_event_xml,
+    split_events,
+)
+from tests.fixtures import events_xml
 
 
 class TestNormalizedEvent(unittest.TestCase):
@@ -133,6 +141,240 @@ class TestNormalizedEvent(unittest.TestCase):
     def test_event_fields_excludes_raw_and_metadata(self):
         self.assertNotIn("raw", EVENT_FIELDS)
         self.assertNotIn("metadata", EVENT_FIELDS)
+
+
+class TestParseEventXml(unittest.TestCase):
+    def test_extracts_event_id(self):
+        self.assertEqual(7040, parse_event_xml(events_xml.SERVICE_7040)["event_id"])
+
+    def test_extracts_event_id_without_qualifiers(self):
+        self.assertEqual(
+            4625, parse_event_xml(events_xml.FAILED_LOGON_4625)["event_id"]
+        )
+
+    def test_extracts_record_id(self):
+        self.assertEqual(143105, parse_event_xml(events_xml.SERVICE_7040)["record_id"])
+
+    def test_extracts_channel_and_host(self):
+        parsed = parse_event_xml(events_xml.SERVICE_7040)
+        self.assertEqual("System", parsed["channel"])
+        self.assertEqual("LAPTOP-A4BLML0Q", parsed["host"])
+
+    def test_extracts_provider(self):
+        self.assertEqual(
+            "Service Control Manager",
+            parse_event_xml(events_xml.SERVICE_7040)["provider"],
+        )
+
+    def test_handles_seven_digit_fractional_seconds(self):
+        # Smoke check only: Python 3.11+ accepts 7 digits natively, so this
+        # cannot prove truncation. The strict-parser test below does.
+        parsed = parse_event_xml(events_xml.SERVICE_7040)
+        self.assertIsInstance(parsed["timestamp"], datetime)
+        self.assertIsNone(parsed["timestamp"].tzinfo)
+
+    def test_seven_digit_fraction_is_truncated_for_strict_parser(self):
+        real = datetime.fromisoformat
+
+        def strict(text):
+            # Mimic Python 3.8-3.10: more than 6 fractional digits is rejected.
+            frac = text.split(".", 1)[1] if "." in text else ""
+            digits = ""
+            for ch in frac:
+                if not ch.isdigit():
+                    break
+                digits += ch
+            if len(digits) > 6:
+                raise ValueError("Invalid isoformat string: {!r}".format(text))
+            return real(text)
+
+        class StrictDatetime(datetime):
+            fromisoformat = staticmethod(strict)
+
+        with mock.patch("ingestion.normalizer.datetime", StrictDatetime):
+            got = _parse_system_time("2026-10-01T19:17:07.6372592Z")
+        expected = datetime(
+            2026, 10, 1, 19, 17, 7, 637259, tzinfo=timezone.utc
+        ).astimezone().replace(tzinfo=None)
+        self.assertEqual(expected, got)
+
+    def test_timestamp_is_converted_to_local(self):
+        parsed = parse_event_xml(events_xml.FAILED_LOGON_4625)
+        expected = datetime(
+            2026, 5, 9, 10, 0, 1, 123456, tzinfo=timezone.utc
+        ).astimezone().replace(tzinfo=None)
+        self.assertEqual(expected, parsed["timestamp"])
+
+    def test_extracts_event_data_by_name(self):
+        data = parse_event_xml(events_xml.FAILED_LOGON_4625)["data"]
+        self.assertEqual("administrator", data["TargetUserName"])
+        self.assertEqual("203.0.113.50", data["IpAddress"])
+        self.assertEqual("3", data["LogonType"])
+
+    def test_extracts_userdata_element_names(self):
+        data = parse_event_xml(events_xml.LOG_CLEARED_1102)["data"]
+        self.assertEqual("administrator", data["SubjectUserName"])
+
+    def test_rejects_non_event_xml(self):
+        with self.assertRaises(ValueError) as ctx:
+            parse_event_xml("<html><body>nope</body></html>")
+        self.assertIn("Not a Windows Event record", str(ctx.exception))
+
+    def test_rejects_event_without_system_section(self):
+        with self.assertRaises(ValueError) as ctx:
+            parse_event_xml("<Event/>")
+        self.assertIn("Event XML has no <System> section", str(ctx.exception))
+
+    def test_extracts_level(self):
+        self.assertEqual(4, parse_event_xml(events_xml.SERVICE_7040)["level"])
+
+    def test_parses_event_without_namespace(self):
+        xml = events_xml.NO_NAMESPACE_4625
+        self.assertNotIn("xmlns", xml)
+        parsed = parse_event_xml(xml)
+        self.assertEqual(4625, parsed["event_id"])
+        self.assertEqual(500, parsed["record_id"])
+        self.assertEqual("WORKSTATION1", parsed["host"])
+        self.assertEqual("administrator", parsed["data"]["TargetUserName"])
+
+    def test_fully_populated_record_parses(self):
+        parsed = parse_event_xml(events_xml.SERVICE_7040)
+        self.assertEqual(7040, parsed["event_id"])
+        self.assertEqual(143105, parsed["record_id"])
+        self.assertEqual("LAPTOP-A4BLML0Q", parsed["host"])
+        self.assertIsInstance(parsed["timestamp"], datetime)
+
+    def test_missing_or_empty_required_fields_raise(self):
+        # Each required System field, as (name, element text to strip/empty).
+        # A silent default would feed the dedup key and the forensic timeline.
+        xml = events_xml.SERVICE_7040
+        cases = {
+            "SystemTime": (
+                "<TimeCreated SystemTime='2026-09-29T17:43:30.7880600Z'/>",
+                "<TimeCreated/>",
+                "<TimeCreated SystemTime=''/>",
+            ),
+            "EventRecordID": (
+                "<EventRecordID>143105</EventRecordID>",
+                "",
+                "<EventRecordID></EventRecordID>",
+            ),
+            "Computer": (
+                "<Computer>LAPTOP-A4BLML0Q</Computer>",
+                "",
+                "<Computer></Computer>",
+            ),
+            "EventID": (
+                "<EventID Qualifiers='16384'>7040</EventID>",
+                "",
+                "<EventID Qualifiers='16384'></EventID>",
+            ),
+        }
+        for name, (original, *variants) in cases.items():
+            self.assertIn(original, xml)
+            for variant in variants:
+                with self.subTest(field=name, variant=variant):
+                    with self.assertRaises(ValueError) as ctx:
+                        parse_event_xml(xml.replace(original, variant))
+                    self.assertIn(
+                        "Event XML has no {}".format(name), str(ctx.exception)
+                    )
+
+    def test_missing_time_created_element_raises(self):
+        xml = events_xml.SERVICE_7040.replace(
+            "<TimeCreated SystemTime='2026-09-29T17:43:30.7880600Z'/>", ""
+        )
+        with self.assertRaises(ValueError) as ctx:
+            parse_event_xml(xml)
+        self.assertIn("Event XML has no SystemTime", str(ctx.exception))
+
+    def test_rejects_malformed_xml(self):
+        with self.assertRaises(ValueError):
+            parse_event_xml("<Event><System>")
+
+
+class TestSplitEvents(unittest.TestCase):
+    def test_splits_concatenated_dump(self):
+        parts = split_events(events_xml.TWO_EVENTS_CONCATENATED)
+        self.assertEqual(2, len(parts))
+        self.assertEqual(7040, parse_event_xml(parts[0])["event_id"])
+        self.assertEqual(4625, parse_event_xml(parts[1])["event_id"])
+
+    def test_single_event(self):
+        self.assertEqual(1, len(split_events(events_xml.SERVICE_7040)))
+
+    def test_empty_blob(self):
+        self.assertEqual([], split_events(""))
+
+    def test_ignores_surrounding_whitespace_and_newlines(self):
+        blob = "\n" + events_xml.SERVICE_7040 + "\r\n" + events_xml.FAILED_LOGON_4625
+        self.assertEqual(2, len(split_events(blob)))
+
+    def test_nested_event_element_does_not_truncate_record(self):
+        parts = split_events(events_xml.NESTED_EVENT_ELEMENT_1015)
+        self.assertEqual([events_xml.NESTED_EVENT_ELEMENT_1015], parts)
+        parsed = parse_event_xml(parts[0])
+        self.assertEqual(1015, parsed["event_id"])
+        self.assertEqual("4", parsed["data"]["Event"])
+
+    def test_nested_event_element_between_normal_events(self):
+        blob = (
+            events_xml.SERVICE_7040
+            + events_xml.NESTED_EVENT_ELEMENT_1015
+            + events_xml.FAILED_LOGON_4625
+        )
+        ids = [parse_event_xml(p)["event_id"] for p in split_events(blob)]
+        self.assertEqual([7040, 1015, 4625], ids)
+
+    def test_event_with_newline_in_data_value_is_one_record(self):
+        parts = split_events(events_xml.MULTILINE_DATA)
+        self.assertEqual(1, len(parts))
+        data = parse_event_xml(parts[0])["data"]
+        self.assertEqual("line one" + chr(10) + "line two" + chr(10) + "line three", data["Message"])
+
+    def test_self_closing_event_is_returned_alongside_normal_event(self):
+        blob = "<Event/>" + events_xml.SERVICE_7040
+        parts = split_events(blob)
+        self.assertEqual(["<Event/>", events_xml.SERVICE_7040], parts)
+
+    def test_event_data_and_event_id_tags_are_not_event_boundaries(self):
+        # <EventData> / <EventID> must not be mistaken for <Event>.
+        self.assertEqual([], split_events("<EventData></EventData><EventID/>"))
+
+    def test_stray_closing_tag_does_not_swallow_following_records(self):
+        blob = "</Event>" + events_xml.SERVICE_7040 + events_xml.FAILED_LOGON_4625
+        parts = split_events(blob)
+        self.assertEqual(2, len(parts))
+        self.assertEqual(
+            [7040, 4625], [parse_event_xml(p)["event_id"] for p in parts]
+        )
+
+    def test_nested_self_closing_event_is_not_a_separate_record(self):
+        record = events_xml.LOG_CLEARED_1102.replace(
+            "<UserData>", "<UserData><Event/>"
+        )
+        self.assertIn("<Event/>", record)
+        self.assertEqual([record], split_events(record))
+
+    def test_records_keep_exact_whitespace(self):
+        # CRLF, tabs and runs of spaces inside and between elements must come
+        # back untouched: `raw` is stored for forensics and feeds the dedup hash.
+        record = (
+            events_xml.MULTILINE_DATA.replace(
+                "line one\nline two", "line one\r\n\ttwo  \r\n  "
+            )
+            .replace("<EventData>", "<EventData>\n\t ")
+            .replace("</EventData>", " \r\n</EventData>")
+        )
+        self.assertIn("\r\n\ttwo  \r\n  ", record)
+        blob = "  \r\n" + record + "\t\r\n" + events_xml.SERVICE_7040
+        parts = split_events(blob)
+        self.assertEqual(2, len(parts))
+        self.assertEqual(record, parts[0])
+
+    def test_records_keep_exact_original_bytes(self):
+        blob = "junk " + events_xml.MULTILINE_DATA + " junk"
+        self.assertEqual([events_xml.MULTILINE_DATA], split_events(blob))
 
 
 if __name__ == "__main__":
