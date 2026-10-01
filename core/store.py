@@ -11,6 +11,8 @@ over history — so the store is the design centre rather than a side effect.
 import sqlite3
 from pathlib import Path
 
+from ingestion.normalizer import NormalizedEvent
+
 DEFAULT_DB_PATH = Path("db/siem_lite.db")
 
 EVENT_COLUMNS = (
@@ -230,3 +232,73 @@ def stats(conn):
         "earliest": span["earliest"],
         "latest": span["latest"],
     }
+
+
+# `order` is the one query input that goes into the SQL text, so it is mapped
+# through this allow-list; anything unrecognised raises.
+_ORDER = {"asc": "ASC", "desc": "DESC"}
+
+
+def query_events(conn, since=None, until=None, source_ip=None, user=None,
+                 host=None, event_id=None, channel=None, action=None,
+                 limit=1000, order="asc"):
+    """Fetch stored events matching the given filters.
+
+    `user` deliberately matches either side of an action — an analyst asking
+    about an account wants both the logons it performed and the logons
+    attempted against it.
+    """
+    clauses = []
+    params = []
+
+    if since is not None:
+        clauses.append("timestamp >= ?")
+        params.append(since.isoformat(sep=" "))
+    if until is not None:
+        clauses.append("timestamp <= ?")
+        params.append(until.isoformat(sep=" "))
+    if user is not None:
+        clauses.append('("user" = ? OR target_user = ?)')
+        params.extend([user, user])
+    # `is not None`, not truthiness: event_id=0 marks a malformed record and
+    # must match only those, not everything.
+    for col, val in (("source_ip", source_ip), ("host", host),
+                     ("event_id", event_id), ("channel", channel),
+                     ("action", action)):
+        if val is not None:
+            clauses.append(col + " = ?")
+            params.append(val)
+
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    try:
+        direction = _ORDER[str(order).lower()]
+    except KeyError:
+        raise ValueError("order must be 'asc' or 'desc', got {!r}".format(order))
+
+    sql = "SELECT * FROM events{} ORDER BY timestamp {}, id {} LIMIT ?".format(
+        where, direction, direction
+    )
+    params.append(int(limit))
+
+    return [NormalizedEvent.from_row(r) for r in conn.execute(sql, params)]
+
+
+def get_bookmark(conn, channel):
+    """Last consumed EventRecordID for a channel, 0 if never read."""
+    row = conn.execute(
+        "SELECT last_record_id FROM bookmarks WHERE channel = ?", (channel,)
+    ).fetchone()
+    return row["last_record_id"] if row else 0
+
+
+def set_bookmark(conn, channel, record_id):
+    """Record the resume point for a channel."""
+    with conn:
+        conn.execute(
+            "INSERT INTO bookmarks (channel, last_record_id, last_run) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(channel) DO UPDATE SET "
+            "last_record_id = excluded.last_record_id, "
+            "last_run = excluded.last_run",
+            (channel, int(record_id)),
+        )

@@ -301,5 +301,167 @@ class TestStats(StoreTestCase):
         self.assertEqual(30, result["by_event_id"][30])
 
 
+class TestQuery(StoreTestCase):
+    def setUp(self):
+        super().setUp()
+        store.insert_events(
+            self.conn,
+            [
+                make_event(1, timestamp=datetime(2026, 9, 29, 10, 0, 0),
+                           source_ip="203.0.113.50", target_user="administrator"),
+                make_event(2, timestamp=datetime(2026, 9, 29, 11, 0, 0),
+                           source_ip="203.0.113.50", target_user="admin"),
+                make_event(3, timestamp=datetime(2026, 9, 29, 12, 0, 0),
+                           source_ip="10.0.0.15", user="jsmith",
+                           event_id=4624, action="LOGIN_OK"),
+                make_event(4, timestamp=datetime(2026, 9, 29, 13, 0, 0),
+                           host="SERVER1", channel="System", event_id=7045),
+            ],
+        )
+
+    def test_query_all(self):
+        self.assertEqual(4, len(store.query_events(self.conn)))
+
+    def test_returns_normalized_events(self):
+        events = store.query_events(self.conn, limit=1)
+        self.assertEqual("windows", events[0].source_type)
+
+    def test_filter_by_source_ip(self):
+        events = store.query_events(self.conn, source_ip="203.0.113.50")
+        self.assertEqual(2, len(events))
+
+    def test_filter_by_user_matches_target_user_too(self):
+        events = store.query_events(self.conn, user="administrator")
+        self.assertEqual(1, len(events))
+        self.assertEqual("administrator", events[0].target_user)
+
+    def test_filter_by_user_matches_acting_user(self):
+        events = store.query_events(self.conn, user="jsmith")
+        self.assertEqual(1, len(events))
+
+    def test_filter_by_host(self):
+        self.assertEqual(1, len(store.query_events(self.conn, host="SERVER1")))
+
+    def test_filter_by_event_id(self):
+        self.assertEqual(1, len(store.query_events(self.conn, event_id=7045)))
+
+    def test_filter_by_channel(self):
+        self.assertEqual(3, len(store.query_events(self.conn, channel="Security")))
+
+    def test_filter_by_action(self):
+        self.assertEqual(1, len(store.query_events(self.conn, action="LOGIN_OK")))
+
+    def test_since_is_inclusive_lower_bound(self):
+        events = store.query_events(self.conn, since=datetime(2026, 9, 29, 12, 0, 0))
+        self.assertEqual(2, len(events))
+
+    def test_until_is_inclusive_upper_bound(self):
+        events = store.query_events(self.conn, until=datetime(2026, 9, 29, 11, 0, 0))
+        self.assertEqual(2, len(events))
+
+    def test_limit_applies(self):
+        self.assertEqual(2, len(store.query_events(self.conn, limit=2)))
+
+    def test_default_order_is_ascending(self):
+        events = store.query_events(self.conn)
+        self.assertEqual(datetime(2026, 9, 29, 10, 0, 0), events[0].timestamp)
+
+    def test_descending_order(self):
+        events = store.query_events(self.conn, order="desc")
+        self.assertEqual(datetime(2026, 9, 29, 13, 0, 0), events[0].timestamp)
+
+    def test_combined_filters(self):
+        events = store.query_events(
+            self.conn, source_ip="203.0.113.50",
+            since=datetime(2026, 9, 29, 10, 30, 0),
+        )
+        self.assertEqual(1, len(events))
+
+    def test_descending_ties_come_back_in_reverse_insertion_order(self):
+        # Needs DESC plus a non-timestamp filter: ASC (or a since/until scan)
+        # returns rowid order even without the id tiebreak.
+        same = datetime(2026, 9, 29, 14, 0, 0)
+        store.insert_events(
+            self.conn,
+            [make_event(r, timestamp=same, source_ip="198.51.100.7")
+             for r in (30, 10, 20)],
+        )
+        events = store.query_events(
+            self.conn, source_ip="198.51.100.7", order="desc"
+        )
+        self.assertEqual([20, 10, 30], [e.record_id for e in events])
+
+    def test_hostile_order_raises_and_leaves_table_intact(self):
+        with self.assertRaises(ValueError):
+            store.query_events(self.conn, order="asc; DROP TABLE events")
+        self.assertEqual(4, store.count_events(self.conn))
+
+    def test_unrecognised_order_raises(self):
+        for bad in ("descending", "dsc", None):
+            with self.assertRaises(ValueError):
+                store.query_events(self.conn, order=bad)
+
+    def test_event_id_zero_returns_only_malformed_row(self):
+        store.insert_events(self.conn, [make_event(5, event_id=0)])
+        events = store.query_events(self.conn, event_id=0)
+        self.assertEqual([5], [e.record_id for e in events])
+
+    def test_empty_user_matches_nothing(self):
+        self.assertEqual([], store.query_events(self.conn, user=""))
+
+    def test_placeholder_user_matches_literally(self):
+        # "-" is the schema's "not present" value, but still a real stored value.
+        store.insert_events(
+            self.conn, [make_event(5, user="alice", target_user="bob")]
+        )
+        events = store.query_events(self.conn, user="-")
+        self.assertEqual([1, 2, 3, 4], [e.record_id for e in events])
+
+    def test_empty_string_filter_matches_nothing(self):
+        self.assertEqual([], store.query_events(self.conn, channel=""))
+
+    def test_hostile_filter_value_is_bound_not_interpolated(self):
+        events = store.query_events(self.conn, host="x' OR '1'='1")
+        self.assertEqual([], events)
+
+
+class TestBookmarks(StoreTestCase):
+    def test_missing_bookmark_is_zero(self):
+        self.assertEqual(0, store.get_bookmark(self.conn, "Security"))
+
+    def test_set_then_get(self):
+        store.set_bookmark(self.conn, "Security", 143105)
+        self.assertEqual(143105, store.get_bookmark(self.conn, "Security"))
+
+    def test_set_bookmark_is_committed_and_visible_to_other_connection(self):
+        store.set_bookmark(self.conn, "Security", 42)
+        other = sqlite3.connect(self.db_path)
+        try:
+            row = other.execute(
+                "SELECT last_record_id FROM bookmarks WHERE channel='Security'"
+            ).fetchone()
+        finally:
+            other.close()
+        self.assertEqual((42,), row)
+
+    def test_update_overwrites(self):
+        store.set_bookmark(self.conn, "Security", 100)
+        store.set_bookmark(self.conn, "Security", 200)
+        self.assertEqual(200, store.get_bookmark(self.conn, "Security"))
+
+    def test_channels_are_independent(self):
+        store.set_bookmark(self.conn, "Security", 100)
+        store.set_bookmark(self.conn, "System", 900)
+        self.assertEqual(100, store.get_bookmark(self.conn, "Security"))
+        self.assertEqual(900, store.get_bookmark(self.conn, "System"))
+
+    def test_last_run_is_recorded(self):
+        store.set_bookmark(self.conn, "Security", 1)
+        row = self.conn.execute(
+            "SELECT last_run FROM bookmarks WHERE channel='Security'"
+        ).fetchone()
+        self.assertIsNotNone(row["last_run"])
+
+
 if __name__ == "__main__":
     unittest.main()
