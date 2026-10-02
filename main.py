@@ -23,9 +23,10 @@ import time
 import json
 from datetime import datetime
 
+import cli
 from core.report import (
     Colors, Finding, fix_encoding, banner,
-    print_section, print_finding, print_ok, print_info, print_warn,
+    print_section, print_finding, print_ok, print_info, print_warn, print_error,
     generate_report,
 )
 from core.scanner import run_scan
@@ -390,6 +391,13 @@ def build_parser():
 
 def main():
     fix_encoding()
+
+    # Subcommands (`main.py db stats`) route to the cli package; legacy
+    # --scan/--analyze flags fall through to the parser below.
+    argv = sys.argv[1:]
+    if cli.is_subcommand(argv):
+        sys.exit(cli.dispatch(argv))
+
     banner()
 
     parser = build_parser()
@@ -471,6 +479,7 @@ def main():
             print_ok("No cross-module correlations found.")
 
     # ── JSON Output ─────────────────────────
+    save_failed = False
     if args.output:
         print_info(f"Generating JSON report: {args.output}")
         json_report = {
@@ -497,11 +506,16 @@ def main():
             print_ok(f"JSON report saved to {args.output}")
         except Exception as e:
             print_error(f"Failed to save JSON report: {e}")
+            save_failed = True
 
     # ── Final Report ─────────────────────────
     elapsed = time.time() - start_time
     report_title = " + ".join(report_title_parts)
     generate_report(report_title, all_findings, elapsed)
+
+    # A lost report must not look like a saved one to a calling script.
+    if save_failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

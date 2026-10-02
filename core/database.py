@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+from core import store as _store
 from modules.mitre_mapping import enrich_alert_with_mitre
 
 # ─────────────────────────────────────────────
@@ -146,6 +147,9 @@ def init_database():
                     pass  # Column might already exist
         
         conn.commit()
+
+        # New pipeline tables live in core.store; one init entry point covers both.
+        _store.init_schema(conn)
         return True
     except sqlite3.Error as e:
         print(f"Database initialization error: {e}")

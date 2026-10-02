@@ -252,3 +252,339 @@ def parse_event_xml(xml_text):
         "timestamp": timestamp,
         "data": data,
     }
+
+
+# ----------------------------------------------------------------------
+# Windows EventID -> semantic action
+# ----------------------------------------------------------------------
+
+WINDOWS_ACTIONS = {
+    4624: "LOGIN_OK",
+    4625: "LOGIN_FAIL",
+    4634: "LOGOFF",
+    4672: "PRIVILEGE_ASSIGN",
+    4688: "PROCESS_CREATE",
+    4689: "PROCESS_EXIT",
+    4720: "ACCOUNT_CREATE",
+    4722: "ACCOUNT_ENABLE",
+    4724: "PASSWORD_RESET",
+    4728: "GROUP_ADD_GLOBAL",
+    4732: "GROUP_ADD_LOCAL",
+    4740: "ACCOUNT_LOCKOUT",
+    4776: "NTLM_VALIDATE",
+    4698: "TASK_CREATE",
+    1102: "LOG_CLEARED",
+    7045: "SERVICE_INSTALL",
+    4104: "SCRIPTBLOCK",
+    5140: "SHARE_ACCESS",
+}
+
+SYSMON_ACTIONS = {
+    1: "PROCESS_CREATE",
+    3: "NETWORK_CONNECT",
+    11: "FILE_CREATE",
+}
+
+# Severity hints are parser-level only. Detection rules set real severity.
+_SEVERITY_HINTS = {
+    "LOGIN_FAIL": "LOW",
+    "ACCOUNT_CREATE": "MEDIUM",
+    "GROUP_ADD_GLOBAL": "MEDIUM",
+    "GROUP_ADD_LOCAL": "MEDIUM",
+    "PRIVILEGE_ASSIGN": "MEDIUM",
+    "LOG_CLEARED": "HIGH",
+    "SERVICE_INSTALL": "MEDIUM",
+    "TASK_CREATE": "MEDIUM",
+}
+
+_LOCAL_ADDRESSES = {"-", "", "::1", "127.0.0.1", "0.0.0.0", "localhost"}
+
+# metadata keys that are pipeline control flags. EventData names and values
+# are attacker-influenced, so the catch-all must never write these; a clash
+# is kept under an "eventdata_" prefix instead. A new flag is closed by
+# adding its name here.
+_RESERVED_METADATA_KEYS = frozenset({"stable_record_id"})
+
+# data key -> flat field, applied per EventID. Keys absent from `data` are skipped.
+_FIELD_MAPS = {
+    4624: {"TargetUserName": "user", "IpAddress": "source_ip",
+           "LogonType": "logon_type", "ProcessName": "process"},
+    4625: {"TargetUserName": "target_user", "SubjectUserName": "user",
+           "IpAddress": "source_ip", "LogonType": "logon_type"},
+    4634: {"TargetUserName": "user", "LogonType": "logon_type"},
+    4672: {"SubjectUserName": "user"},
+    4688: {"SubjectUserName": "user", "NewProcessName": "process",
+           "ParentProcessName": "parent_process", "CommandLine": "command_line"},
+    4689: {"SubjectUserName": "user", "ProcessName": "process"},
+    4720: {"SubjectUserName": "user", "TargetUserName": "target_user"},
+    4722: {"SubjectUserName": "user", "TargetUserName": "target_user"},
+    4724: {"SubjectUserName": "user", "TargetUserName": "target_user"},
+    4728: {"SubjectUserName": "user", "MemberName": "target_user",
+           "TargetUserName": "object_name"},
+    4732: {"SubjectUserName": "user", "MemberName": "target_user",
+           "TargetUserName": "object_name"},
+    4740: {"TargetUserName": "target_user", "TargetDomainName": "object_name"},
+    4776: {"TargetUserName": "target_user", "Workstation": "object_name"},
+    4698: {"SubjectUserName": "user", "TaskName": "object_name"},
+    1102: {"SubjectUserName": "user"},
+    7045: {"AccountName": "user", "ServiceName": "service_name",
+           "ImagePath": "process"},
+    4104: {"ScriptBlockText": "command_line", "Path": "object_name"},
+    5140: {"SubjectUserName": "user", "IpAddress": "source_ip",
+           "ShareName": "object_name"},
+}
+
+_SYSMON_FIELD_MAPS = {
+    1: {"User": "user", "Image": "process", "ParentImage": "parent_process",
+        "CommandLine": "command_line"},
+    3: {"User": "user", "Image": "process", "SourceIp": "source_ip",
+        "DestinationIp": "dest_ip"},
+    11: {"User": "user", "Image": "process", "TargetFilename": "object_name"},
+}
+
+# Fields that must end up as ints regardless of how the XML spelled them.
+_INT_FIELDS = {"logon_type"}
+_IP_FIELDS = ("source_ip", "dest_ip")
+
+_DETAIL_ORDER = (
+    "target_user", "user", "source_ip", "process", "command_line",
+    "service_name", "object_name",
+)
+
+
+def _clean_ip(value):
+    """Collapse loopback and placeholder addresses to a single 'local' token."""
+    text = value.strip()
+    return "local" if text.lower() in _LOCAL_ADDRESSES else text
+
+
+def _to_int(value):
+    """Parse an int that may be decimal or hex ('0x1a4')."""
+    if value is None:
+        return 0
+    text = str(value).strip()
+    if not text or text == "-":
+        return 0
+    try:
+        return int(text, 16) if text.lower().startswith("0x") else int(text)
+    except ValueError:
+        return 0
+
+
+def _is_sysmon(channel):
+    return "sysmon" in (channel or "").lower()
+
+
+def _channel_allowed(event_id, channel):
+    """True if this Windows (non-Sysmon) EventID may be interpreted here.
+
+    The mapping keys on EventID, and unprivileged code can write Application
+    and often System, so a forged 1102 or 4720 there must not become a
+    detection. An ID on any other channel is still kept, just not interpreted
+    ("OTHER"). ForwardedEvents is allowed because Windows Event Forwarding is
+    a legitimate collection path; its ACL matches Application's, the real
+    barrier is that writing needs a registered publisher. Derived from
+    WINDOWS_ACTIONS so a new Security ID needs no second table.
+    """
+    name = (channel or "").lower()
+    if event_id == 7045:
+        return name == "system"
+    if event_id == 4104:
+        return "powershell" in name
+    return event_id in WINDOWS_ACTIONS and name in ("security", "forwardedevents")
+
+
+def normalize_windows(parsed, raw=""):
+    """Build a NormalizedEvent from the dict parse_event_xml() produced."""
+    event_id = parsed["event_id"]
+    channel = parsed["channel"]
+    data = dict(parsed["data"])
+    sysmon = _is_sysmon(channel)
+    # Interpret as a Windows-native ID only on a channel that may carry it.
+    win = not sysmon and _channel_allowed(event_id, channel)
+
+    if sysmon:
+        action = SYSMON_ACTIONS.get(event_id, "OTHER")
+        field_map = _SYSMON_FIELD_MAPS.get(event_id, {})
+    elif win:
+        action = WINDOWS_ACTIONS.get(event_id, "OTHER")
+        field_map = _FIELD_MAPS.get(event_id, {})
+    else:
+        action = "OTHER"
+        field_map = {}
+
+    flat = {}
+    consumed = set()
+    for key, target in field_map.items():
+        # An empty IP is still a statement ("no remote peer"), so it maps to
+        # "local" below instead of being skipped like other empty values.
+        if key in data and (data[key] != "" or target in _IP_FIELDS):
+            flat[target] = data[key]
+            consumed.add(key)
+
+    # 4624 records the same name on both sides of the action.
+    if event_id == 4624 and win and "user" in flat:
+        flat["target_user"] = flat["user"]
+
+    if "source_ip" in flat:
+        flat["source_ip"] = _clean_ip(flat["source_ip"])
+    if "dest_ip" in flat:
+        flat["dest_ip"] = _clean_ip(flat["dest_ip"])
+    for name in _INT_FIELDS:
+        if name in flat:
+            flat[name] = _to_int(flat[name])
+
+    if event_id == 4688 and win and "NewProcessId" in data:
+        flat["process_id"] = _to_int(data["NewProcessId"])
+        consumed.add("NewProcessId")
+    if event_id == 1 and sysmon and "ProcessId" in data:
+        flat["process_id"] = _to_int(data["ProcessId"])
+        consumed.add("ProcessId")
+
+    metadata = {"provider": parsed.get("provider", "-")}
+    if event_id == 4625 and win:
+        for key, name in (("Status", "status"), ("SubStatus", "sub_status"),
+                          ("WorkstationName", "workstation")):
+            if key in data:
+                metadata[name] = data[key]
+                consumed.add(key)
+    if event_id == 4672 and win and "PrivilegeList" in data:
+        metadata["privileges"] = data["PrivilegeList"].split()
+        consumed.add("PrivilegeList")
+    if event_id == 7045 and win and "StartType" in data:
+        metadata["start_type"] = data["StartType"]
+        consumed.add("StartType")
+    if event_id == 4776 and win and "Status" in data:
+        metadata["status"] = data["Status"]
+        consumed.add("Status")
+    if event_id == 3 and sysmon and "DestinationPort" in data:
+        metadata["dest_port"] = data["DestinationPort"]
+        consumed.add("DestinationPort")
+
+    # Never drop information: whatever no mapping claimed goes to metadata.
+    # Reserved control-flag names are kept, but under a prefix.
+    for key, value in data.items():
+        if key not in consumed and value:
+            if key in _RESERVED_METADATA_KEYS:
+                key = "eventdata_" + key
+            metadata.setdefault(key, value)
+
+    # Live channels have a unique (host, channel, record_id); see
+    # NormalizedEvent.event_hash. Plain assignment, after the catch-all, so
+    # nothing in the log content can pre-empt or alter it.
+    metadata["stable_record_id"] = True
+
+    event = NormalizedEvent(
+        timestamp=parsed["timestamp"],
+        source_type="windows",
+        host=parsed["host"],
+        channel=channel,
+        event_id=event_id,
+        record_id=parsed["record_id"],
+        action=action,
+        severity_hint=_SEVERITY_HINTS.get(action, "INFO"),
+        raw=raw,
+        metadata=metadata,
+        **flat
+    )
+    event.detail = _build_detail(event)
+    return event
+
+
+def _one_line(text):
+    """Replace non-printable characters (newlines, bidi overrides) with spaces."""
+    return "".join(c if c.isprintable() else " " for c in text)
+
+
+def _build_detail(event):
+    """One readable line summarising the event, for timeline and CLI output."""
+    parts = ["{} {}".format(event.event_id, event.action)]
+    for name in _DETAIL_ORDER:
+        value = getattr(event, name)
+        if value and value not in ("-", 0, "local"):
+            parts.append("{}={}".format(name, value))
+    # raw keeps the original characters; detail is rendered as one timeline
+    # row, so a newline or bidi override in a value must not survive.
+    return _one_line(" ".join(parts))[:400]
+
+
+def normalize_windows_xml(xml_text):
+    """Parse and normalize one Windows Event XML record in a single call."""
+    return normalize_windows(parse_event_xml(xml_text), raw=xml_text)
+
+
+# Metadata keys the legacy LogEvent already carries that map onto flat fields.
+_LEGACY_METADATA_FIELDS = {
+    "command_line": "command_line",
+    "process": "process",
+    "new_account": "target_user",
+}
+
+
+def from_log_event(log_event, line_number=0):
+    """Adapt a legacy LogEvent (Apache / SSH / Windows CSV) to NormalizedEvent.
+
+    LogEvent has no channel, host or record id, so the source type stands in
+    for the channel, metadata["computer"] gives the host, and line_number
+    gives each row its record_id.
+
+    line_number is an ordinal, not a physical file offset: the caller counts
+    parsed events (e.g. enumerate(events, start=1)), so blank or unparsed
+    lines do not advance it and log rotation shifts every value. It is a
+    stable identity within one unchanged file only. It repeats across files,
+    so this never sets metadata["stable_record_id"]: the raw digest in
+    event_hash is what keeps two files' line 5 apart.
+
+    The legacy parsers can leave None in fields, so this is a trust boundary:
+    None falls back to the schema defaults. Only timestamp has no sensible
+    default, so a None timestamp raises ValueError instead of failing
+    obscurely later in to_row(). An aware timestamp outside what the OS can
+    convert (e.g. Apache's %z accepts year 1 or pre-1970) also raises
+    ValueError, so callers handle one exception type per record.
+
+    Timestamps go through to_local_naive, the single conversion point:
+    parse_apache emits tz-aware values, and a mixed aware/naive column breaks
+    string-compared since= queries and ORDER BY timestamp.
+    """
+    if log_event.timestamp is None:
+        raise ValueError(
+            "LogEvent.timestamp is required, got None (line_number={})".format(
+                line_number
+            )
+        )
+
+    try:
+        timestamp = to_local_naive(log_event.timestamp)
+    except (OSError, OverflowError):
+        raise ValueError(
+            "LogEvent.timestamp {!r} is out of range for local time conversion "
+            "(line_number={})".format(log_event.timestamp, line_number)
+        )
+
+    metadata = dict(log_event.metadata or {})
+    # Control flags must come from this pipeline, never from parsed content.
+    # Keep the clashing value under a prefix rather than dropping it.
+    for key in _RESERVED_METADATA_KEYS & metadata.keys():
+        metadata["legacy_" + key] = metadata.pop(key)
+
+    source_type = log_event.source_type
+    flat = {target: metadata[key] for key, target in _LEGACY_METADATA_FIELDS.items()
+            if metadata.get(key)}
+    action = log_event.action or "OTHER"
+
+    return NormalizedEvent(
+        timestamp=timestamp,
+        source_type=source_type,
+        host=metadata.get("computer") or metadata.get("host") or "-",
+        channel="windows-csv" if source_type == "windows" else source_type,
+        event_id=_to_int(metadata.get("event_id") or log_event.status_code),
+        record_id=_to_int(line_number),
+        action=action,
+        severity_hint=_SEVERITY_HINTS.get(action, "INFO"),
+        user=log_event.user or "-",
+        source_ip=_clean_ip(log_event.source_ip or ""),
+        detail=_one_line(log_event.detail or "-")[:400],
+        raw=log_event.raw_line or "",
+        metadata=metadata,
+        **flat
+    )
