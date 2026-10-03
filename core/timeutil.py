@@ -20,6 +20,38 @@ _UNITS = {
 }
 
 
+def _too_large(value):
+    return ValueError(
+        "Time value {!r} is too large. Use a smaller offset like 24h, "
+        "30m, 7d.".format(value)
+    )
+
+
+def parse_duration(value):
+    """Parse a relative length ('30s', '5m', '24h', '7d') into a timedelta.
+
+    Zero parses; whether it is legal is the caller's call. Raises ValueError on
+    anything else, including a value too large for a timedelta.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            "Duration must be text like 30s, 5m, 24h, 7d, got {!r}.".format(value)
+        )
+    value = value.strip()
+    if not value:
+        raise ValueError("Empty duration. Use a number and a unit: 30s, 5m, 24h, 7d.")
+    match = _RELATIVE.match(value)
+    if not match:
+        raise ValueError(
+            "Cannot parse duration {!r}. Use a number and a unit: 30s, 5m, 24h, "
+            "7d.".format(value)
+        )
+    try:
+        return timedelta(**{_UNITS[match.group(2)]: int(match.group(1))})
+    except OverflowError:
+        raise _too_large(value)
+
+
 def parse_since(value, now=None):
     """Parse a relative offset ('30m', '24h', '7d') or an ISO timestamp.
 
@@ -33,17 +65,11 @@ def parse_since(value, now=None):
 
     value = value.strip()
 
-    match = _RELATIVE.match(value)
-    if match:
-        amount = int(match.group(1))
-        unit = _UNITS[match.group(2)]
+    if _RELATIVE.match(value):
         try:
-            return now - timedelta(**{unit: amount})
+            return now - parse_duration(value)
         except OverflowError:
-            raise ValueError(
-                "Time value {!r} is too large. Use a smaller offset like 24h, "
-                "30m, 7d.".format(value)
-            )
+            raise _too_large(value)
 
     try:
         parsed = datetime.fromisoformat(value)

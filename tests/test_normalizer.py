@@ -39,7 +39,7 @@ class TestNormalizedEvent(unittest.TestCase):
         expected = {
             "action": "OTHER", "severity_hint": "INFO",
             "user": "-", "target_user": "-", "source_ip": "-", "dest_ip": "-",
-            "logon_type": 0,
+            "dest_port": 0, "logon_type": 0, "status": "-", "workstation": "-",
             "process": "-", "process_id": 0, "parent_process": "-",
             "command_line": "-",
             "object_name": "-", "service_name": "-",
@@ -396,11 +396,6 @@ class TestNormalizeWindows(unittest.TestCase):
         self.assertEqual("Security", event.channel)
         self.assertEqual(500, event.record_id)
 
-    def test_4625_keeps_status_in_metadata(self):
-        event = normalize_windows_xml(events_xml.FAILED_LOGON_4625)
-        self.assertEqual("0xc000006d", event.metadata["status"])
-        self.assertEqual("KALI", event.metadata["workstation"])
-
     def test_4688_maps_process_fields(self):
         event = normalize_windows_xml(events_xml.PROCESS_4688)
         self.assertEqual("PROCESS_CREATE", event.action)
@@ -446,15 +441,15 @@ class TestNormalizeWindows(unittest.TestCase):
         xml_text = events_xml.FAILED_LOGON_4625.replace("203.0.113.50", "::1")
         self.assertEqual("local", normalize_windows_xml(xml_text).source_ip)
 
-    def test_dash_ip_normalizes_to_local(self):
+    def test_dash_ip_stays_the_unknown_token(self):
         xml_text = events_xml.FAILED_LOGON_4625.replace(
             "<Data Name='IpAddress'>203.0.113.50</Data>",
             "<Data Name='IpAddress'>-</Data>",
         )
-        self.assertEqual("local", normalize_windows_xml(xml_text).source_ip)
+        self.assertEqual("-", normalize_windows_xml(xml_text).source_ip)
 
     def test_every_local_ip_spelling_normalizes_to_local(self):
-        for spelling in ("127.0.0.1", "0.0.0.0", "", "localhost", "LOCALHOST"):
+        for spelling in ("127.0.0.1", "0.0.0.0", "localhost", "LOCALHOST"):
             xml_text = events_xml.FAILED_LOGON_4625.replace(
                 "<Data Name='IpAddress'>203.0.113.50</Data>",
                 "<Data Name='IpAddress'>{}</Data>".format(spelling),
@@ -539,8 +534,8 @@ MAPPING_TABLE = [
     (4625, "Security", "LOGIN_FAIL",
      {"TargetUserName": "target_user", "SubjectUserName": "user",
       "IpAddress": "source_ip", "LogonType": "logon_type",
-      "Status": "metadata.status", "SubStatus": "metadata.sub_status",
-      "WorkstationName": "metadata.workstation"}),
+      "Status": "status", "SubStatus": "metadata.sub_status",
+      "WorkstationName": "workstation"}),
     (4634, "Security", "LOGOFF",
      {"TargetUserName": "user", "LogonType": "logon_type"}),
     (4672, "Security", "PRIVILEGE_ASSIGN",
@@ -567,7 +562,7 @@ MAPPING_TABLE = [
      {"TargetUserName": "target_user", "TargetDomainName": "object_name"}),
     (4776, "Security", "NTLM_VALIDATE",
      {"TargetUserName": "target_user", "Workstation": "object_name",
-      "Status": "metadata.status"}),
+      "Status": "status"}),
     (4698, "Security", "TASK_CREATE",
      {"SubjectUserName": "user", "TaskName": "object_name"}),
     (1102, "Security", "LOG_CLEARED", {"SubjectUserName": "user"}),
@@ -584,7 +579,7 @@ MAPPING_TABLE = [
       "CommandLine": "command_line", "ProcessId": "process_id"}),
     (3, _SYSMON_CHANNEL, "NETWORK_CONNECT",
      {"User": "user", "Image": "process", "SourceIp": "source_ip",
-      "DestinationIp": "dest_ip", "DestinationPort": "metadata.dest_port"}),
+      "DestinationIp": "dest_ip", "DestinationPort": "dest_port"}),
     (11, _SYSMON_CHANNEL, "FILE_CREATE",
      {"User": "user", "Image": "process", "TargetFilename": "object_name"}),
 ]
@@ -606,6 +601,7 @@ _TYPED_INPUTS = {
     "LogonType": ("3", 3),
     "NewProcessId": ("0x1a4", 0x1A4),
     "ProcessId": ("1234", 1234),
+    "DestinationPort": ("4444", 4444),
     "PrivilegeList": ("SENTINEL_P1 SENTINEL_P2", ["SENTINEL_P1", "SENTINEL_P2"]),
 }
 
@@ -678,15 +674,63 @@ class TestFieldMaps(unittest.TestCase):
                 self.assertEqual(action, event.action)
 
 
+class TestPromotedFields(unittest.TestCase):
+    def test_promoted_fields_are_matchable(self):
+        for name in ("status", "dest_port", "workstation"):
+            self.assertIn(name, EVENT_FIELDS)
+
+    def test_status_is_flat_on_a_failed_logon(self):
+        event = normalize_windows_xml(events_xml.FAILED_LOGON_4625)
+        self.assertEqual("0xc000006d", event.status.lower())
+        # No longer duplicated into metadata: one home per value.
+        self.assertNotIn("status", event.metadata)
+
+    def test_status_is_flat_on_an_ntlm_validation(self):
+        # 4776 success and failure share one action; status is the only
+        # discriminator, so it must be matchable here too.
+        xml_text = _event_xml(
+            4776, "Security",
+            {"TargetUserName": "bob", "Workstation": "KALI", "Status": "0xc000006a"},
+        )
+        event = normalize_windows_xml(xml_text)
+        self.assertEqual("0xc000006a", event.status)
+        self.assertNotIn("status", event.metadata)
+
+    def test_workstation_is_flat_on_a_failed_logon(self):
+        event = normalize_windows_xml(events_xml.FAILED_LOGON_4625)
+        self.assertEqual("KALI", event.workstation)
+        self.assertNotIn("workstation", event.metadata)
+
+    def test_sub_status_stays_in_metadata(self):
+        event = normalize_windows_xml(events_xml.FAILED_LOGON_4625)
+        self.assertEqual("0xc000006a", event.metadata["sub_status"])
+
+    def test_dest_port_is_an_int_on_sysmon_network_connect(self):
+        event = normalize_windows_xml(events_xml.SYSMON_NETWORK_3)
+        self.assertEqual(4444, event.dest_port)
+        self.assertNotIn("dest_port", event.metadata)
+
+    def test_absent_values_use_the_schema_defaults(self):
+        event = normalize_windows_xml(events_xml.SERVICE_7040)
+        self.assertEqual("-", event.status)
+        self.assertEqual("-", event.workstation)
+        self.assertEqual(0, event.dest_port)
+
+    def test_hostile_eventdata_cannot_overwrite_promoted_status(self):
+        xml_text = events_xml.FAILED_LOGON_4625.replace(
+            "</EventData>", "<Data Name='status'>HOSTILE</Data></EventData>"
+        )
+        event = normalize_windows_xml(xml_text)
+        self.assertEqual("0xc000006d", event.status)
+        self.assertEqual("HOSTILE", event.metadata["status"])
+
+
 class TestDerivedValues(unittest.TestCase):
     def test_hostile_eventdata_cannot_overwrite_derived_metadata(self):
         xml_text = events_xml.FAILED_LOGON_4625.replace(
-            "</EventData>",
-            "<Data Name='status'>HOSTILE</Data>"
-            "<Data Name='provider'>HOSTILE</Data></EventData>",
+            "</EventData>", "<Data Name='provider'>HOSTILE</Data></EventData>"
         )
         event = normalize_windows_xml(xml_text)
-        self.assertEqual("0xc000006d", event.metadata["status"])
         self.assertEqual(
             "Microsoft-Windows-Security-Auditing", event.metadata["provider"]
         )
@@ -716,12 +760,12 @@ class TestDerivedValues(unittest.TestCase):
         ))
         self.assertEqual("local", event.source_ip)
         self.assertEqual("local", event.dest_ip)
-        # An empty peer address is the same statement as a loopback one.
+        # An empty peer address records nothing, so it is not a loopback claim.
         event = normalize_windows_xml(_event_xml(
             3, _SYSMON_CHANNEL, {"SourceIp": "", "DestinationIp": ""}
         ))
-        self.assertEqual("local", event.source_ip)
-        self.assertEqual("local", event.dest_ip)
+        self.assertEqual("-", event.source_ip)
+        self.assertEqual("-", event.dest_ip)
 
     def test_timestamp_is_the_local_naive_system_time(self):
         expected = datetime(
@@ -919,7 +963,7 @@ class TestLegacyAdapter(unittest.TestCase):
                                 action=None),
             line_number=3,
         )
-        self.assertEqual("local", event.source_ip)
+        self.assertEqual("-", event.source_ip)
         self.assertEqual("-", event.user)
         self.assertEqual("-", event.detail)
         self.assertEqual("", event.raw)
@@ -1057,6 +1101,102 @@ class TestLegacyAdapter(unittest.TestCase):
         self.assertEqual("HIGH", event.severity_hint)
         event = from_log_event(self.make_log_event(action="LOGIN_FAIL"), line_number=1)
         self.assertEqual("LOW", event.severity_hint)
+
+
+# An Application/System shape: a provider that numbers its insertion strings
+# instead of naming them, on an EventID this parser does not interpret.
+_UNNAMED_DATA_XML = (
+    "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
+    "<System><Provider Name='Microsoft-Windows-DNS-Client'/>"
+    "<EventID>1014</EventID>"
+    "<TimeCreated SystemTime='2026-05-09T10:00:00.000000Z'/>"
+    "<EventRecordID>7</EventRecordID><Channel>System</Channel>"
+    "<Computer>HOST1</Computer></System><EventData>{}</EventData></Event>"
+)
+
+
+class TestUnnamedEventData(unittest.TestCase):
+    """Unnamed <Data> used to be dropped, which emptied the payload of the
+    System events a non-elevated operator can actually collect."""
+
+    def metadata(self, payload):
+        return normalize_windows_xml(_UNNAMED_DATA_XML.format(payload)).metadata
+
+    def test_unnamed_data_lands_under_a_positional_key(self):
+        meta = self.metadata("<Data>wpad</Data><Data>1460</Data>")
+        self.assertEqual("wpad", meta["param1"])
+        self.assertEqual("1460", meta["param2"])
+
+    def test_numbering_counts_only_the_unnamed_elements(self):
+        meta = self.metadata(
+            "<Data>first</Data><Data Name='Status'>0</Data><Data>second</Data>"
+        )
+        self.assertEqual("first", meta["param1"])
+        self.assertEqual("second", meta["param2"])
+        self.assertEqual("0", meta["Status"])
+
+    def test_numbering_is_stable_for_the_same_input(self):
+        payload = "<Data>a</Data><Data>b</Data><Data>c</Data>"
+        self.assertEqual(self.metadata(payload), self.metadata(payload))
+
+    def test_payload_is_no_longer_just_the_provider_and_the_flag(self):
+        self.assertNotEqual(
+            {"provider", "stable_record_id"},
+            set(self.metadata("<Data>wpad</Data>")),
+        )
+
+    def test_unnamed_data_cannot_set_a_reserved_metadata_key(self):
+        meta = self.metadata(
+            "<Data>payload</Data>"
+            "<Data Name='stable_record_id'>evil</Data>"
+        )
+        self.assertIs(True, meta["stable_record_id"])
+        self.assertEqual("evil", meta["eventdata_stable_record_id"])
+        self.assertEqual("payload", meta["param1"])
+
+    def test_a_crafted_param_name_is_a_plain_collision_last_one_wins(self):
+        # param1 is not a control flag, so a clash is data, not an escalation.
+        meta = self.metadata(
+            "<Data>payload</Data><Data Name='param1'>crafted</Data>"
+        )
+        self.assertEqual("crafted", meta["param1"])
+        self.assertIs(True, meta["stable_record_id"])
+
+    def test_event_hash_is_untouched_for_events_without_unnamed_data(self):
+        # A windows event_hash is f(host, channel, record_id); pinned digests
+        # fail loudly if that ever starts depending on the payload.
+        for name, digest in (
+            ("FAILED_LOGON_4625",
+             "4c4bd134e70bd638555bfad6d0f259e2b5354524196eea155911395cad3794bf"),
+            ("SERVICE_7040",
+             "c1c584b37894d8869ba702b1d1c47d062c52a933b99844ef1dc2c59d48a981e3"),
+            ("LOG_CLEARED_1102",
+             "4bcbc1cdb35f8ee07f2748b274ffd046fb35b9b9122bd2a23eccd6a7f004ddb4"),
+        ):
+            event = normalize_windows_xml(getattr(events_xml, name))
+            self.assertEqual(digest, event.event_hash, name)
+
+
+class TestIpPlaceholders(unittest.TestCase):
+    """Windows writes IpAddress '-' on NTLM/Kerberos pass-through: the source
+    was not recorded, not that it was this machine."""
+
+    def with_ip(self, value):
+        return normalize_windows_xml(events_xml.FAILED_LOGON_4625.replace(
+            "<Data Name='IpAddress'>203.0.113.50</Data>",
+            "<Data Name='IpAddress'>{}</Data>".format(value),
+        )).source_ip
+
+    def test_not_recorded_becomes_the_unknown_token(self):
+        self.assertEqual("-", self.with_ip("-"))
+        self.assertEqual("-", self.with_ip(""))
+
+    def test_genuine_loopback_is_still_local(self):
+        for spelling in ("127.0.0.1", "::1", "localhost", "LOCALHOST", "0.0.0.0"):
+            self.assertEqual("local", self.with_ip(spelling), spelling)
+
+    def test_a_real_remote_address_passes_through(self):
+        self.assertEqual("203.0.113.50", self.with_ip("203.0.113.50"))
 
 
 if __name__ == "__main__":

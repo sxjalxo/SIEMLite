@@ -74,6 +74,21 @@ APACHE_PATTERN = re.compile(
 
 APACHE_TIME_FMT = "%d/%b/%Y:%H:%M:%S %z"
 
+
+def _strptime_any(text, *formats):
+    """First format that parses `text`, else None — never a substituted now().
+
+    timestamp is the one column the whole pipeline orders and windows by, so an
+    invented one silently corrupts every --since/--until and purge cutoff. The
+    caller must count the row in `skipped` and drop it.
+    """
+    for fmt in formats:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    return None
+
 AUTH_ENDPOINTS = [
     "/login", "/signin", "/auth", "/admin", "/wp-login.php",
     "/wp-admin", "/user/login", "/account/login", "/api/login",
@@ -109,10 +124,10 @@ def parse_apache(filepath):
                 skipped += 1
                 continue
 
-            try:
-                ts = datetime.strptime(m.group("time"), APACHE_TIME_FMT)
-            except ValueError:
-                ts = datetime.now()
+            ts = _strptime_any(m.group("time"), APACHE_TIME_FMT)
+            if ts is None:
+                skipped += 1
+                continue
 
             action = _classify_apache_action(
                 m.group("method"), m.group("path"), m.group("status")
@@ -173,13 +188,22 @@ MONTH_MAP = {
 
 
 def _parse_ssh_timestamp(month_str, day_str, time_str):
-    """Parse SSH log timestamp (no year — assume current year)."""
+    """Parse SSH log timestamp (no year — assume current year), None if malformed.
+
+    Guarded here rather than at the three call sites: an impossible date
+    (Feb 30), an out-of-range hour or a time missing its seconds must cost one
+    line, not abort the whole file with a ValueError (exit 2) or an IndexError
+    traceback. Callers count a None in `skipped` and drop the line.
+    """
     month = MONTH_MAP.get(month_str, 1)
-    day = int(day_str)
-    parts = time_str.split(":")
-    hour, minute, second = int(parts[0]), int(parts[1]), int(parts[2])
     year = datetime.now().year
-    return datetime(year, month, day, hour, minute, second)
+    try:
+        day = int(day_str)
+        parts = time_str.split(":")
+        hour, minute, second = int(parts[0]), int(parts[1]), int(parts[2])
+        return datetime(year, month, day, hour, minute, second)
+    except (ValueError, IndexError):
+        return None
 
 
 def parse_ssh(filepath):
@@ -196,7 +220,12 @@ def parse_ssh(filepath):
             # Failed password
             m = SSH_FAILED.match(line)
             if m:
-                ts = _parse_ssh_timestamp(m.group("month"), m.group("day"), m.group("time"))
+                ts = _parse_ssh_timestamp(
+                    m.group("month"), m.group("day"), m.group("time")
+                )
+                if ts is None:
+                    skipped += 1
+                    continue
                 events.append(LogEvent(
                     timestamp=ts,
                     source_type="ssh",
@@ -216,7 +245,12 @@ def parse_ssh(filepath):
             # Accepted login
             m = SSH_ACCEPTED.match(line)
             if m:
-                ts = _parse_ssh_timestamp(m.group("month"), m.group("day"), m.group("time"))
+                ts = _parse_ssh_timestamp(
+                    m.group("month"), m.group("day"), m.group("time")
+                )
+                if ts is None:
+                    skipped += 1
+                    continue
                 events.append(LogEvent(
                     timestamp=ts,
                     source_type="ssh",
@@ -237,7 +271,12 @@ def parse_ssh(filepath):
             # Disconnect
             m = SSH_DISCONNECT.match(line)
             if m:
-                ts = _parse_ssh_timestamp(m.group("month"), m.group("day"), m.group("time"))
+                ts = _parse_ssh_timestamp(
+                    m.group("month"), m.group("day"), m.group("time")
+                )
+                if ts is None:
+                    skipped += 1
+                    continue
                 events.append(LogEvent(
                     timestamp=ts,
                     source_type="ssh",
@@ -280,12 +319,23 @@ WIN_EVENT_ACTIONS = {
     4756: "GROUP_ADD_MEMBER",
 }
 
+# The second is what `Get-EventLog | Export-Csv` writes, i.e. the normal export,
+# unpadded (10/3/2026 9:05:00 AM); strptime accepts unpadded %m/%d/%I.
+WIN_TIME_FMTS = ("%Y-%m-%d %H:%M:%S", "%m/%d/%Y %I:%M:%S %p")
+
 # Regex to extract Source IP from Windows log messages
 WIN_IP_PATTERN = re.compile(r'Source\s+IP:\s*(\S+)', re.IGNORECASE)
 WIN_USER_FROM_MSG = re.compile(r'User:\s*(\S+)', re.IGNORECASE)
 WIN_NEWACCT_PATTERN = re.compile(r'New Account:\s*(\S+)', re.IGNORECASE)
 WIN_PROCESS_PATTERN = re.compile(r'Process:\s*(\S+)', re.IGNORECASE)
 WIN_CMDLINE_PATTERN = re.compile(r'CommandLine:\s*(.*)', re.IGNORECASE)
+
+
+def _csv_field(row, field_map, name, default):
+    """Stripped CSV value. csv.DictReader fills the columns a short row lacks
+    with None, which has no .strip(); None falls back to default instead."""
+    value = row.get(field_map.get(name, name))
+    return (default if value is None else value).strip()
 
 
 def parse_windows_csv(filepath):
@@ -321,22 +371,21 @@ def parse_windows_csv(filepath):
 
         for row in reader:
             try:
-                event_id = int(row.get(field_map.get("EventID", "EventID"), "0").strip())
+                event_id = int(_csv_field(row, field_map, "EventID", ""))
             except (ValueError, AttributeError):
                 skipped += 1
                 continue
 
             action = WIN_EVENT_ACTIONS.get(event_id, "OTHER")
-            message = row.get(field_map.get("Message", "Message"), "").strip()
-            username = row.get(field_map.get("UserName", "UserName"), "-").strip()
-            computer = row.get(field_map.get("ComputerName", "ComputerName"), "-").strip()
-            time_str = row.get(field_map.get("TimeGenerated", "TimeGenerated"), "").strip()
+            message = _csv_field(row, field_map, "Message", "")
+            username = _csv_field(row, field_map, "UserName", "-")
+            computer = _csv_field(row, field_map, "ComputerName", "-")
+            time_str = _csv_field(row, field_map, "TimeGenerated", "")
 
-            # Parse timestamp
-            try:
-                ts = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-            except (ValueError, AttributeError):
-                ts = datetime.now()
+            ts = _strptime_any(time_str, *WIN_TIME_FMTS)
+            if ts is None:
+                skipped += 1
+                continue
 
             # Extract source IP from message
             ip_match = WIN_IP_PATTERN.search(message)
@@ -354,7 +403,7 @@ def parse_windows_csv(filepath):
             meta = {
                 "computer": computer,
                 "event_id": event_id,
-                "category": row.get(field_map.get("Category", "Category"), "").strip(),
+                "category": _csv_field(row, field_map, "Category", ""),
             }
 
             # Extract new account name
@@ -371,7 +420,7 @@ def parse_windows_csv(filepath):
             if cmd_match:
                 meta["command_line"] = cmd_match.group(1).strip()
 
-            raw_line = ",".join(row.get(f, "") for f in (reader.fieldnames or []))
+            raw_line = ",".join(row.get(f) or "" for f in (reader.fieldnames or []))
 
             events.append(LogEvent(
                 timestamp=ts,

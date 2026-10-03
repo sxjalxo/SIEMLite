@@ -2,10 +2,12 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from core import store
-from ingestion.normalizer import NormalizedEvent
+from core.timeutil import to_local_naive
+from ingestion.normalizer import NormalizedEvent, normalize_windows_xml
+from tests.fixtures import events_xml
 
 
 def make_event(record_id=1, **kwargs):
@@ -50,7 +52,8 @@ class TestSchema(StoreTestCase):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )
         }
-        for expected in ("events", "incidents", "bookmarks", "response_actions"):
+        for expected in ("events", "incidents", "bookmarks", "response_actions",
+                        "alerts"):
             self.assertIn(expected, names)
 
     def test_wal_enabled(self):
@@ -137,6 +140,113 @@ class TestAlertsMigration(unittest.TestCase):
             )
         }
         self.assertIn("idx_alerts_incident", names)
+
+
+class TestPromotedColumns(StoreTestCase):
+    PROMOTED = {"status", "dest_port", "workstation"}
+
+    def columns(self):
+        return {r["name"] for r in self.conn.execute("PRAGMA table_info(events)")}
+
+    def test_events_table_has_the_promoted_columns(self):
+        self.assertLessEqual(self.PROMOTED, self.columns())
+
+    def test_event_columns_matches_the_table(self):
+        self.assertEqual(self.columns() - {"id"}, set(store.EVENT_COLUMNS))
+
+    def test_promoted_values_round_trip(self):
+        for xml_text in (events_xml.FAILED_LOGON_4625, events_xml.SYSMON_NETWORK_3):
+            event = normalize_windows_xml(xml_text)
+            store.insert_events(self.conn, [event])
+        back = {e.event_id: e for e in store.query_events(self.conn)}
+        self.assertEqual("0xc000006d", back[4625].status)
+        self.assertEqual("KALI", back[4625].workstation)
+        self.assertEqual(4444, back[3].dest_port)
+
+
+class TestEventsMigration(unittest.TestCase):
+    """A store written before the promotion has `events` without the columns."""
+
+    # The Plan 1 events table: every column except the three promoted ones.
+    LEGACY_DDL = (
+        "CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "timestamp DATETIME NOT NULL, source_type TEXT NOT NULL, "
+        "host TEXT NOT NULL, channel TEXT NOT NULL, "
+        "event_id INTEGER NOT NULL, record_id INTEGER NOT NULL, "
+        "action TEXT NOT NULL, severity_hint TEXT, user TEXT, "
+        "target_user TEXT, source_ip TEXT, dest_ip TEXT, logon_type INTEGER, "
+        "process TEXT, process_id INTEGER, parent_process TEXT, "
+        "command_line TEXT, object_name TEXT, service_name TEXT, "
+        "detail TEXT, raw TEXT, metadata TEXT, event_hash TEXT NOT NULL UNIQUE)"
+    )
+
+    def setUp(self):
+        handle, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(handle)
+        self.conn = store.connect(self.db_path)
+        self.conn.execute(self.LEGACY_DDL)
+        self.conn.execute(
+            "INSERT INTO events (timestamp, source_type, host, channel, "
+            "event_id, record_id, action, event_hash) VALUES "
+            "('2026-09-29 10:00:00', 'windows', 'H', 'Security', 4625, 1, "
+            "'LOGIN_FAIL', 'legacy-hash')"
+        )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.unlink(self.db_path + suffix)
+            except OSError:
+                pass
+
+    def columns(self):
+        return {r["name"] for r in self.conn.execute("PRAGMA table_info(events)")}
+
+    def test_legacy_fixture_lacks_the_promoted_columns(self):
+        self.assertFalse({"status", "dest_port", "workstation"} & self.columns())
+
+    def test_migration_adds_the_columns_and_keeps_the_row(self):
+        store.init_schema(self.conn)
+        self.assertLessEqual({"status", "dest_port", "workstation"}, self.columns())
+        self.assertEqual(1, store.count_events(self.conn))
+        # The migrated store accepts new promoted values.
+        store.insert_events(self.conn, [normalize_windows_xml(
+            events_xml.FAILED_LOGON_4625)])
+        self.assertEqual(2, store.count_events(self.conn))
+
+    def test_pre_migration_rows_read_back_with_the_defaults_not_none(self):
+        # Rules must never see None: a Plan 1 row reads "-" / "-" / 0.
+        store.init_schema(self.conn)
+        old = store.query_events(self.conn, event_id=4625)[0]
+        self.assertEqual("-", old.status)
+        self.assertEqual("-", old.workstation)
+        self.assertEqual(0, old.dest_port)
+
+    def test_fresh_and_migrated_events_tables_declare_the_same_columns(self):
+        store.init_schema(self.conn)
+        fresh = store.connect(self.db_path + ".fresh")
+        try:
+            store.init_schema(fresh)
+            def decl(conn):
+                return {r["name"]: (r["type"], r["dflt_value"])
+                        for r in conn.execute("PRAGMA table_info(events)")}
+            migrated = decl(self.conn)
+            for name in ("status", "workstation", "dest_port"):
+                self.assertEqual(decl(fresh)[name], migrated[name], name)
+        finally:
+            fresh.close()
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.unlink(self.db_path + ".fresh" + suffix)
+                except OSError:
+                    pass
+
+    def test_second_init_schema_does_not_error(self):
+        store.init_schema(self.conn)
+        store.init_schema(self.conn)
+        self.assertEqual(set(store.EVENT_COLUMNS) | {"id"}, self.columns())
 
 
 class TestInsert(StoreTestCase):
@@ -461,6 +571,82 @@ class TestBookmarks(StoreTestCase):
             "SELECT last_run FROM bookmarks WHERE channel='Security'"
         ).fetchone()
         self.assertIsNotNone(row["last_run"])
+
+
+class TestFreshStoreAlerts(StoreTestCase):
+    """`alerts` must exist after init_schema alone. The legacy --scan path is
+    not a prerequisite, and `--db demo.db` never reaches it."""
+
+    def columns(self):
+        return [r["name"] for r in self.conn.execute("PRAGMA table_info(alerts)")]
+
+    def test_alerts_table_exists(self):
+        self.assertEqual(
+            0, self.conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+        )
+
+    def test_alerts_carries_both_the_legacy_and_the_pipeline_columns(self):
+        cols = self.columns()
+        for name in ("category", "severity", "detail", "source", "resolved",
+                     "mitre_technique_id", "mitre_url"):
+            self.assertIn(name, cols)
+        for name, _decl in store.ALERT_COLUMNS:
+            self.assertIn(name, cols)
+
+    def test_status_defaults_to_new_on_a_fresh_store(self):
+        self.conn.execute(
+            "INSERT INTO alerts (category, severity, detail, source) "
+            "VALUES ('brute_force', 'HIGH', 'd', 'test')"
+        )
+        self.assertEqual(
+            "NEW",
+            self.conn.execute("SELECT status FROM alerts").fetchone()["status"],
+        )
+
+
+class TestAwareTimeBounds(StoreTestCase):
+    """Stored timestamps are local naive and SQLite compares them as text, so
+    an aware bound must be converted, not stringified with its offset."""
+
+    def setUp(self):
+        super(TestAwareTimeBounds, self).setUp()
+        self.local = datetime(2026, 1, 1, 12, 0, 0)
+        store.insert_events(self.conn, [make_event(1, timestamp=self.local)])
+
+    def rows(self, **kwargs):
+        return [e.record_id for e in store.query_events(self.conn, **kwargs)]
+
+    def test_aware_since_at_the_row_instant_still_matches(self):
+        # Local offset attached, wall clock unchanged: the row is that instant.
+        self.assertEqual([1], self.rows(since=self.local.astimezone()))
+
+    def test_aware_bounds_select_what_their_naive_equivalent_selects(self):
+        # -13/+13 cannot equal the local offset, so a text compare must differ.
+        for hours in (-13, 0, 13):
+            aware = self.local.astimezone(timezone(timedelta(hours=hours)))
+            for bound in ("since", "until"):
+                self.assertEqual(
+                    self.rows(**{bound: to_local_naive(aware)}),
+                    self.rows(**{bound: aware}),
+                    "{}={}".format(bound, aware),
+                )
+
+
+class TestQueryLimit(StoreTestCase):
+    TOTAL = 1200
+
+    def setUp(self):
+        super(TestQueryLimit, self).setUp()
+        store.insert_events(self.conn, [
+            make_event(i, timestamp=datetime(2026, 9, 29, 10, 0, 0))
+            for i in range(1, self.TOTAL + 1)
+        ])
+
+    def test_default_limit_caps_interactive_output(self):
+        self.assertEqual(1000, len(store.query_events(self.conn)))
+
+    def test_limit_none_reads_the_whole_window(self):
+        self.assertEqual(self.TOTAL, len(store.query_events(self.conn, limit=None)))
 
 
 if __name__ == "__main__":

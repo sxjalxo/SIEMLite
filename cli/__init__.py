@@ -16,9 +16,10 @@ not "no filter".
 import argparse
 
 from cli.commands import db as db_command
+from cli.commands import ingest as ingest_command
 from core.report import print_error
 
-COMMAND_MODULES = [db_command]
+COMMAND_MODULES = [db_command, ingest_command]
 
 
 def build_parser():

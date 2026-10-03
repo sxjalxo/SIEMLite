@@ -425,7 +425,6 @@ def main():
         scan_findings = run_scan(
             args.scan, 
             skip_ports=args.no_ports or args.quick, 
-            quick_mode=args.quick,
             store_to_db=True
         )
         report_title_parts.append(args.scan)

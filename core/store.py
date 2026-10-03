@@ -11,6 +11,7 @@ over history — so the store is the design centre rather than a side effect.
 import sqlite3
 from pathlib import Path
 
+from core.timeutil import to_local_naive
 from ingestion.normalizer import NormalizedEvent
 
 DEFAULT_DB_PATH = Path("db/siem_lite.db")
@@ -18,8 +19,9 @@ DEFAULT_DB_PATH = Path("db/siem_lite.db")
 EVENT_COLUMNS = (
     "timestamp", "source_type", "host", "channel", "event_id", "record_id",
     "action", "severity_hint", "user", "target_user", "source_ip", "dest_ip",
-    "logon_type", "process", "process_id", "parent_process", "command_line",
-    "object_name", "service_name", "detail", "raw", "metadata", "event_hash",
+    "dest_port", "logon_type", "status", "workstation", "process", "process_id",
+    "parent_process", "command_line", "object_name", "service_name", "detail",
+    "raw", "metadata", "event_hash",
 )
 
 SCHEMA = """
@@ -37,7 +39,10 @@ CREATE TABLE IF NOT EXISTS events (
     target_user    TEXT,
     source_ip      TEXT,
     dest_ip        TEXT,
+    dest_port      INTEGER DEFAULT 0,
     logon_type     INTEGER,
+    status         TEXT DEFAULT '-',
+    workstation    TEXT DEFAULT '-',
     process        TEXT,
     process_id     INTEGER,
     parent_process TEXT,
@@ -93,9 +98,37 @@ CREATE TABLE IF NOT EXISTS response_actions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_response_incident ON response_actions(incident_id);
+
+-- `alerts` predates this store but is owned here, because core.database's
+-- init_database() is only reached from the legacy --scan/--analyze path: a
+-- store created by `siem db init` or `--db demo.db` would otherwise have no
+-- table to write an alert to. core.database calls init_schema, so defining it
+-- once here covers both entry points.
+CREATE TABLE IF NOT EXISTS alerts (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    category             TEXT NOT NULL,
+    severity             TEXT NOT NULL,
+    detail               TEXT NOT NULL,
+    evidence             TEXT,
+    source               TEXT NOT NULL,
+    related_ip           TEXT,
+    related_url          TEXT,
+    resolved             BOOLEAN DEFAULT 0,
+    mitre_technique_id   TEXT,
+    mitre_technique_name TEXT,
+    mitre_tactic         TEXT,
+    mitre_tactic_id      TEXT,
+    mitre_url            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp);
+CREATE INDEX IF NOT EXISTS idx_alerts_category  ON alerts(category);
+CREATE INDEX IF NOT EXISTS idx_alerts_source    ON alerts(source);
 """
 
-# Columns added to the pre-existing `alerts` table. SQLite has no
+# Columns added to the `alerts` table above. SQLite has no
 # "ADD COLUMN IF NOT EXISTS", so each is checked against PRAGMA table_info first.
 ALERT_COLUMNS = (
     ("rule_id", "TEXT"),
@@ -105,6 +138,19 @@ ALERT_COLUMNS = (
     ("event_ids", "TEXT"),
     ("incident_id", "INTEGER"),
     ("status", "TEXT DEFAULT 'NEW'"),
+)
+
+
+# Columns added to `events` after Plan 1 shipped it. Same mechanism as above.
+# The constant DEFAULT backfills pre-existing rows to the dataclass defaults
+# ("-" / 0), so a rule can never read None; SCHEMA repeats it so a fresh table
+# matches a migrated one.
+# No `if present:` guard: `events` is always in SCHEMA, so table_info is never
+# empty here.
+EVENT_MIGRATION_COLUMNS = (
+    ("status", "TEXT DEFAULT '-'"),
+    ("workstation", "TEXT DEFAULT '-'"),
+    ("dest_port", "INTEGER DEFAULT 0"),
 )
 
 
@@ -123,17 +169,17 @@ def init_schema(conn):
     """Create the pipeline tables. Safe to run repeatedly."""
     conn.executescript(SCHEMA)
 
-    # table_info is empty when `alerts` does not exist (fresh database).
-    present = {r["name"] for r in conn.execute("PRAGMA table_info(alerts)")}
-    if present:
-        for name, decl in ALERT_COLUMNS:
+    for table, columns in (("events", EVENT_MIGRATION_COLUMNS),
+                           ("alerts", ALERT_COLUMNS)):
+        present = {r["name"] for r in conn.execute(
+            "PRAGMA table_info({})".format(table))}
+        for name, decl in columns:
             if name not in present:
-                conn.execute(
-                    "ALTER TABLE alerts ADD COLUMN {} {}".format(name, decl)
-                )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alerts(incident_id)"
-        )
+                conn.execute("ALTER TABLE {} ADD COLUMN {} {}".format(
+                    table, name, decl))
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alerts(incident_id)"
+    )
     conn.commit()
 
 
@@ -247,16 +293,26 @@ def query_events(conn, since=None, until=None, source_ip=None, user=None,
     `user` deliberately matches either side of an action — an analyst asking
     about an account wants both the logons it performed and the logons
     attempted against it.
+
+    `since`/`until` go through to_local_naive, the same single conversion point
+    the write side uses. Stored timestamps are local naive and SQLite compares
+    them as text, so an aware bound stringified with its '+HH:MM' suffix would
+    be compared character by character and quietly select the wrong rows.
+
+    `limit` defaults to 1000 to protect interactive output. `limit=None` emits
+    no LIMIT clause: a batch reader that must see a whole window has to pass it
+    explicitly or it silently works on the newest 1000 rows only. A negative
+    limit reaches SQLite as-is, where -1 also means no limit.
     """
     clauses = []
     params = []
 
     if since is not None:
         clauses.append("timestamp >= ?")
-        params.append(since.isoformat(sep=" "))
+        params.append(to_local_naive(since).isoformat(sep=" "))
     if until is not None:
         clauses.append("timestamp <= ?")
-        params.append(until.isoformat(sep=" "))
+        params.append(to_local_naive(until).isoformat(sep=" "))
     if user is not None:
         clauses.append('("user" = ? OR target_user = ?)')
         params.extend([user, user])
@@ -275,10 +331,12 @@ def query_events(conn, since=None, until=None, source_ip=None, user=None,
     except KeyError:
         raise ValueError("order must be 'asc' or 'desc', got {!r}".format(order))
 
-    sql = "SELECT * FROM events{} ORDER BY timestamp {}, id {} LIMIT ?".format(
+    sql = "SELECT * FROM events{} ORDER BY timestamp {}, id {}".format(
         where, direction, direction
     )
-    params.append(int(limit))
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(int(limit))
 
     return [NormalizedEvent.from_row(r) for r in conn.execute(sql, params)]
 

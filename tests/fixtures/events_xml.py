@@ -63,6 +63,27 @@ PROCESS_4688 = (
     "</EventData></Event>"
 )
 
+SYSMON_NETWORK_3 = (
+    "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
+    "<System><Provider Name='Microsoft-Windows-Sysmon' "
+    "Guid='{5770385f-c22a-43e0-bf4c-06f5698ffbd9}'/>"
+    "<EventID>3</EventID><Version>5</Version><Level>4</Level>"
+    "<TimeCreated SystemTime='2026-05-09T10:07:00.000000Z'/>"
+    "<EventRecordID>9001</EventRecordID>"
+    "<Channel>Microsoft-Windows-Sysmon/Operational</Channel>"
+    "<Computer>WORKSTATION1</Computer></System>"
+    "<EventData>"
+    "<Data Name='ProcessId'>4120</Data>"
+    "<Data Name='Image'>C:\\Windows\\System32\\cmd.exe</Data>"
+    "<Data Name='User'>WORKSTATION1\\bob</Data>"
+    "<Data Name='Protocol'>tcp</Data>"
+    "<Data Name='SourceIp'>10.0.0.5</Data>"
+    "<Data Name='SourcePort'>49900</Data>"
+    "<Data Name='DestinationIp'>203.0.113.9</Data>"
+    "<Data Name='DestinationPort'>4444</Data>"
+    "</EventData></Event>"
+)
+
 LOG_CLEARED_1102 = (
     "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
     "<System><Provider Name='Microsoft-Windows-Eventlog'/>"

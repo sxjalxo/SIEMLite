@@ -31,7 +31,7 @@ class TestParser(unittest.TestCase):
         self.assertEqual("init", args.action)
 
     def test_command_names_reads_module_constants(self):
-        self.assertEqual({"db"}, cli.command_names())
+        self.assertEqual({"db", "ingest"}, cli.command_names())
 
     def test_command_names_is_derived_from_registered_modules(self):
         stub = SimpleNamespace(NAME="stub")
@@ -240,6 +240,41 @@ class TestLegacyWiring(unittest.TestCase):
                     os.unlink(path + suffix)
                 except OSError:
                     pass
+
+    def test_init_database_creates_a_missing_parent_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "no" / "such" / "dir" / "siem.db"
+            with mock.patch.object(database, "DB_PATH", path):
+                with redirect_stdout(io.StringIO()):
+                    self.assertTrue(database.init_database())
+            self.assertTrue(path.is_file())
+            for suffix in ("-wal", "-shm"):
+                try:
+                    os.unlink(str(path) + suffix)
+                except OSError:
+                    pass
+
+    def run_scan_main(self, *flags):
+        argv = ["main.py", "--scan", "http://127.0.0.1:9"] + list(flags)
+        # autospec: a keyword run_scan does not accept raises TypeError here,
+        # exactly as it does against the real scanner.
+        with mock.patch.object(sys, "argv", argv),                 mock.patch.object(main, "fix_encoding"),                 mock.patch.object(main, "banner"),                 mock.patch.object(main, "init_database"),                 mock.patch.object(main, "generate_report"),                 mock.patch.object(
+                    main, "run_scan", autospec=True, return_value=[]
+                ) as scan,                 redirect_stdout(io.StringIO()):
+            main.main()
+        return scan
+
+    def test_scan_reaches_the_scanner_with_arguments_it_accepts(self):
+        scan = self.run_scan_main("--no-ports")
+        scan.assert_called_once_with(
+            "http://127.0.0.1:9", skip_ports=True, store_to_db=True
+        )
+
+    def test_quick_scan_skips_ports_through_skip_ports(self):
+        scan = self.run_scan_main("--quick")
+        scan.assert_called_once_with(
+            "http://127.0.0.1:9", skip_ports=True, store_to_db=True
+        )
 
     def test_main_py_imports_print_error(self):
         # The --output failure path calls print_error; it must be importable there.

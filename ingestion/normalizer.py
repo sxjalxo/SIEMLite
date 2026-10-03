@@ -35,7 +35,10 @@ class NormalizedEvent:
     target_user: str = "-"
     source_ip: str = "-"
     dest_ip: str = "-"
+    dest_port: int = 0
     logon_type: int = 0
+    status: str = "-"
+    workstation: str = "-"
 
     process: str = "-"
     process_id: int = 0
@@ -224,6 +227,7 @@ def parse_event_xml(xml_text):
     timestamp = _parse_system_time(system_time)
 
     data = {}
+    unnamed = 0
     for container_name in ("EventData", "UserData"):
         container = root.find(EVENT_NS + container_name)
         if container is None:
@@ -237,8 +241,14 @@ def parse_event_xml(xml_text):
             text = (element.text or "").strip()
             if tag == "Data":
                 name = element.get("Name")
-                if name:
-                    data[name] = text
+                if not name:
+                    # Unnamed <Data> is an insertion string; Windows numbers
+                    # them the same way. Counting unnamed elements only (and
+                    # counting the empty ones too) keeps paramN on the position
+                    # the provider's message template refers to.
+                    unnamed += 1
+                    name = "param{}".format(unnamed)
+                data[name] = text
             elif text:
                 data[tag] = text
 
@@ -297,7 +307,11 @@ _SEVERITY_HINTS = {
     "TASK_CREATE": "MEDIUM",
 }
 
-_LOCAL_ADDRESSES = {"-", "", "::1", "127.0.0.1", "0.0.0.0", "localhost"}
+_LOCAL_ADDRESSES = {"::1", "127.0.0.1", "0.0.0.0", "localhost"}
+
+# Not a claim about the source: Windows writes "-" for IpAddress on NTLM and
+# Kerberos pass-through authentication, meaning "not recorded".
+_UNRECORDED_ADDRESSES = {"-", ""}
 
 # metadata keys that are pipeline control flags. EventData names and values
 # are attacker-influenced, so the catch-all must never write these; a clash
@@ -310,7 +324,8 @@ _FIELD_MAPS = {
     4624: {"TargetUserName": "user", "IpAddress": "source_ip",
            "LogonType": "logon_type", "ProcessName": "process"},
     4625: {"TargetUserName": "target_user", "SubjectUserName": "user",
-           "IpAddress": "source_ip", "LogonType": "logon_type"},
+           "IpAddress": "source_ip", "LogonType": "logon_type",
+           "Status": "status", "WorkstationName": "workstation"},
     4634: {"TargetUserName": "user", "LogonType": "logon_type"},
     4672: {"SubjectUserName": "user"},
     4688: {"SubjectUserName": "user", "NewProcessName": "process",
@@ -324,7 +339,8 @@ _FIELD_MAPS = {
     4732: {"SubjectUserName": "user", "MemberName": "target_user",
            "TargetUserName": "object_name"},
     4740: {"TargetUserName": "target_user", "TargetDomainName": "object_name"},
-    4776: {"TargetUserName": "target_user", "Workstation": "object_name"},
+    4776: {"TargetUserName": "target_user", "Workstation": "object_name",
+           "Status": "status"},
     4698: {"SubjectUserName": "user", "TaskName": "object_name"},
     1102: {"SubjectUserName": "user"},
     7045: {"AccountName": "user", "ServiceName": "service_name",
@@ -338,13 +354,12 @@ _SYSMON_FIELD_MAPS = {
     1: {"User": "user", "Image": "process", "ParentImage": "parent_process",
         "CommandLine": "command_line"},
     3: {"User": "user", "Image": "process", "SourceIp": "source_ip",
-        "DestinationIp": "dest_ip"},
+        "DestinationIp": "dest_ip", "DestinationPort": "dest_port"},
     11: {"User": "user", "Image": "process", "TargetFilename": "object_name"},
 }
 
 # Fields that must end up as ints regardless of how the XML spelled them.
-_INT_FIELDS = {"logon_type"}
-_IP_FIELDS = ("source_ip", "dest_ip")
+_INT_FIELDS = {"logon_type", "dest_port"}
 
 _DETAIL_ORDER = (
     "target_user", "user", "source_ip", "process", "command_line",
@@ -353,9 +368,16 @@ _DETAIL_ORDER = (
 
 
 def _clean_ip(value):
-    """Collapse loopback and placeholder addresses to a single 'local' token."""
+    """Collapse loopback to 'local'; an unrecorded address to the '-' default.
+
+    Keeping the two apart matters because rules group by source_ip: merging
+    "not recorded" into "local" would bucket every remote NTLM attempt into one
+    threshold window and hide the real source.
+    """
     text = value.strip()
-    return "local" if text.lower() in _LOCAL_ADDRESSES else text
+    if text.lower() in _LOCAL_ADDRESSES:
+        return "local"
+    return "-" if text in _UNRECORDED_ADDRESSES else text
 
 
 def _to_int(value):
@@ -416,9 +438,7 @@ def normalize_windows(parsed, raw=""):
     flat = {}
     consumed = set()
     for key, target in field_map.items():
-        # An empty IP is still a statement ("no remote peer"), so it maps to
-        # "local" below instead of being skipped like other empty values.
-        if key in data and (data[key] != "" or target in _IP_FIELDS):
+        if key in data and data[key] != "":
             flat[target] = data[key]
             consumed.add(key)
 
@@ -442,24 +462,15 @@ def normalize_windows(parsed, raw=""):
         consumed.add("ProcessId")
 
     metadata = {"provider": parsed.get("provider", "-")}
-    if event_id == 4625 and win:
-        for key, name in (("Status", "status"), ("SubStatus", "sub_status"),
-                          ("WorkstationName", "workstation")):
-            if key in data:
-                metadata[name] = data[key]
-                consumed.add(key)
+    if event_id == 4625 and win and "SubStatus" in data:
+        metadata["sub_status"] = data["SubStatus"]
+        consumed.add("SubStatus")
     if event_id == 4672 and win and "PrivilegeList" in data:
         metadata["privileges"] = data["PrivilegeList"].split()
         consumed.add("PrivilegeList")
     if event_id == 7045 and win and "StartType" in data:
         metadata["start_type"] = data["StartType"]
         consumed.add("StartType")
-    if event_id == 4776 and win and "Status" in data:
-        metadata["status"] = data["Status"]
-        consumed.add("Status")
-    if event_id == 3 and sysmon and "DestinationPort" in data:
-        metadata["dest_port"] = data["DestinationPort"]
-        consumed.add("DestinationPort")
 
     # Never drop information: whatever no mapping claimed goes to metadata.
     # Reserved control-flag names are kept, but under a prefix.

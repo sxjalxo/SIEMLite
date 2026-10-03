@@ -43,24 +43,8 @@ CREATE TABLE IF NOT EXISTS logs (
     source_file TEXT
 );
 
--- Alerts table: Stores findings/detections
-CREATE TABLE IF NOT EXISTS alerts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    category TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    detail TEXT NOT NULL,
-    evidence TEXT,
-    source TEXT NOT NULL,  -- 'scanner', 'log_analyzer', 'correlation'
-    related_ip TEXT,
-    related_url TEXT,
-    resolved BOOLEAN DEFAULT 0,
-    mitre_technique_id TEXT,
-    mitre_technique_name TEXT,
-    mitre_tactic TEXT,
-    mitre_tactic_id TEXT,
-    mitre_url TEXT
-);
+-- The `alerts` table is defined in core.store.SCHEMA, so a store built by
+-- `siem db init` also has it; init_database() calls store.init_schema below.
 
 -- Correlations table: Stores correlation results
 CREATE TABLE IF NOT EXISTS correlations (
@@ -102,10 +86,6 @@ CREATE TABLE IF NOT EXISTS statistics (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip);
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
-CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
-CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp);
-CREATE INDEX IF NOT EXISTS idx_alerts_category ON alerts(category);
-CREATE INDEX IF NOT EXISTS idx_alerts_source ON alerts(source);
 """
 
 
@@ -115,6 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_alerts_source ON alerts(source);
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory for dict access."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -125,7 +106,11 @@ def init_database():
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
-        
+
+        # Before the migration below: `alerts` lives in core.store now, and the
+        # MITRE columns can only be checked once the table exists.
+        _store.init_schema(conn)
+
         # Add MITRE columns if they don't exist (for existing databases)
         cursor = conn.execute("PRAGMA table_info(alerts)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -147,9 +132,6 @@ def init_database():
                     pass  # Column might already exist
         
         conn.commit()
-
-        # New pipeline tables live in core.store; one init entry point covers both.
-        _store.init_schema(conn)
         return True
     except sqlite3.Error as e:
         print(f"Database initialization error: {e}")

@@ -9,7 +9,7 @@ import json
 
 from core import store
 from core.report import print_info, print_ok, print_section
-from core.timeutil import parse_since
+from core.timeutil import parse_since, to_local_naive
 
 NAME = "db"
 
@@ -80,9 +80,12 @@ def _stats(conn, args):
 
 def _purge(conn, args):
     cutoff = parse_since(args.older_than)
+    # parse_since already returns local naive; the conversion is repeated here
+    # because the comparison is text and getting it wrong deletes the wrong rows.
     with conn:
         cursor = conn.execute(
-            "DELETE FROM events WHERE timestamp < ?", (cutoff.isoformat(sep=" "),)
+            "DELETE FROM events WHERE timestamp < ?",
+            (to_local_naive(cutoff).isoformat(sep=" "),),
         )
     removed = cursor.rowcount
 

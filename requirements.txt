@@ -4,3 +4,7 @@ urllib3>=2.0.0
 watchdog>=3.0.0
 rich>=13.0.0
 geoip2>=4.0.0
+PyYAML>=6.0
+# Optional: native Windows Event Log access. Without it, SIEM-Lite falls back
+# to the wevtutil CLI, which is slower but needs no install.
+# pywin32>=306

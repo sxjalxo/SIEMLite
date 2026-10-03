@@ -44,6 +44,8 @@ A lightweight Python-based security tool that combines **web vulnerability scann
 ### Prerequisites
 
 - Python 3.8+
+- SQLite 3.24+ (June 2018) for the event store, which uses `ON CONFLICT ... DO NOTHING`. Python 3.8+ builds bundle a newer SQLite; only a build linked against an old system `libsqlite3` fails, with an error at insert time.
+- Optional, Windows: `pywin32` for native Event Log access. Without it the `wevtutil` fallback is used.
 
 ### Installation
 
@@ -79,6 +81,51 @@ python -m core.scanner https://example.com
 python -m core.log_analyzer data/sample_access.log
 python -m ui.dashboard
 ```
+
+### SIEM Pipeline (Windows)
+
+The `ingest` and `db` commands write to the SQLite event store at `db/siem_lite.db` unless you pass `--db PATH`. That is the same file the legacy `--analyze` flow uses, so use `--db` to try things out without touching your real data.
+
+```cmd
+REM Prepare the event store
+python main.py db init
+
+REM Ingest the System channel (no elevation required)
+python main.py ingest --channel System
+
+REM Ingest the Security channel (requires an Administrator prompt)
+python main.py ingest --channel Security --since 24h
+
+REM Ingest an exported log file instead (Apache, SSH or Windows CSV)
+python main.py ingest --file samples/windows_security.log
+
+REM Inspect what was stored, grouped by channel and Event ID
+python main.py db stats
+python main.py --json db stats
+
+REM Use a throwaway store instead of db/siem_lite.db
+python main.py --db demo.db db stats
+
+REM DELETES stored events older than 30 days from the store in use
+python main.py db purge --older-than 30d
+```
+
+Global flags (`--db`, `--json`) go before the command; flags of a command go after it. `python main.py db stats --db demo.db` exits 2 with a usage error.
+
+Ingestion resumes from a per-channel bookmark. Windows returns records oldest first, so when a channel holds more records than `--count` (default 5000) a re-run reads the next batch, not nothing. A re-run stores 0 new events only when `--count` covers the whole window, so leave `--count` at its default if you want that. `--no-resume` re-reads from `--since`; duplicates are discarded either way.
+
+The Security channel requires elevation. Without it, ingestion exits with an instruction rather than an error trace.
+
+#### `ingest` exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Clean: every requested channel (or the file) was read. |
+| `1` | Nothing requested could be read: access denied, channel not found (e.g. a typo), or an unreadable file. |
+| `2` | Usage error or bad argument value (argparse, e.g. `--since bogus`). |
+| `3` | Partial: something asked for was not stored. A channel was denied, e.g. `--channel Security,System` without elevation; or records would not parse — from a channel or a `--file`. |
+
+A channel that does not exist is only a warning while another one was read.
 
 ---
 

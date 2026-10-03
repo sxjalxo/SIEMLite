@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
-from core.timeutil import parse_since, to_local_naive
+from core.timeutil import parse_duration, parse_since, to_local_naive
 
 
 class TestParseSince(unittest.TestCase):
@@ -102,6 +102,44 @@ class TestParseSince(unittest.TestCase):
         for value in ("\u0663h", "\uff10\uff15h"):
             with self.assertRaises(ValueError):
                 parse_since(value, now=self.now)
+
+
+class TestParseDuration(unittest.TestCase):
+    def test_units(self):
+        self.assertEqual(timedelta(seconds=30), parse_duration("30s"))
+        self.assertEqual(timedelta(minutes=5), parse_duration("5m"))
+        self.assertEqual(timedelta(hours=2), parse_duration("2h"))
+        self.assertEqual(timedelta(days=1), parse_duration("1d"))
+
+    def test_surrounding_whitespace_is_ignored_as_parse_since_does(self):
+        self.assertEqual(timedelta(minutes=5), parse_duration("  5m \n"))
+
+    def test_zero_parses_because_the_caller_decides_whether_it_is_legal(self):
+        self.assertEqual(timedelta(0), parse_duration("0m"))
+
+    def test_rejects_anything_else_with_valueerror(self):
+        for bad in ("5", "m", "5 minutes", "-5m", "", None, 300, "٣h", "1.5h"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                parse_duration(bad)
+
+    def test_a_non_string_is_not_called_empty(self):
+        # `timeframe: 5` in YAML is the int 5, which is unitless, not empty.
+        for bad in (5, 300, 1.5, True):
+            with self.subTest(bad=bad), self.assertRaises(ValueError) as ctx:
+                parse_duration(bad)
+            self.assertNotIn("Empty", str(ctx.exception))
+            self.assertIn(repr(bad), str(ctx.exception))
+            self.assertIn("text", str(ctx.exception))
+
+    def test_an_empty_string_is_called_empty(self):
+        with self.assertRaisesRegex(ValueError, "Empty"):
+            parse_duration("")
+
+    def test_overflow_is_a_valueerror_naming_the_value(self):
+        for bad in ("999999999999d", "99999999999999999d"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError) as ctx:
+                parse_duration(bad)
+            self.assertIn(bad, str(ctx.exception))
 
 
 class TestToLocalNaive(unittest.TestCase):
