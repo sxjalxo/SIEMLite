@@ -1,0 +1,30 @@
+id: win-security-group-add
+title: Member Added To A Security-Enabled Group
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: [4728, 4732]
+    action: [GROUP_ADD_GLOBAL, GROUP_ADD_LOCAL]
+  condition: sel
+mitre:
+  technique: T1098
+  tactic: TA0004
+fields: [target_user, object_name, user, host]
+description: >-
+  A member was added to a security-enabled global (4728) or local (4732) group.
+  target_user is the member added, object_name the group, user the account that
+  made the change. The rule does not check WHICH group, so a harmless group
+  matches as readily as Administrators: group names are localised
+  (Administradores on a Spanish install) and the flat fields carry no SID, so
+  a name filter would miss exactly the hosts an attacker prefers. MEDIUM, not
+  HIGH, for that reason; the correlator raises it when it co-occurs with an
+  account creation or privilege assignment. Universal groups (4756) are not
+  covered.
+falsepositives:
+  - Routine group administration by IT
+  - Installers that add a service account to Performance Log Users or similar
+  - Any group at all, since the group is not checked

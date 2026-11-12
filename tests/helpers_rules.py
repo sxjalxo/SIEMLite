@@ -10,6 +10,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from core.rule_engine.engine import RuleAlert
 from core.rule_engine.loader import load_rule_file
 from ingestion.normalizer import NormalizedEvent
 
@@ -32,3 +33,16 @@ def event(**kwargs):
     )
     base.update(kwargs)
     return NormalizedEvent(**base)
+
+
+def sample_alert(**overrides):
+    """A RuleAlert with every field filled."""
+    base = dict(
+        rule_id="r1", rule_title="Failed Logon Burst", severity="HIGH",
+        entity_type="ip", entity_value="1.2.3.4", event_hashes=("aa", "bb"),
+        timestamp=T0, technique="T1110", tactic="TA0006",
+        category="Failed Logon Burst", source="rule_engine",
+        detail="five failures (ip: 1.2.3.4)", evidence="[]",
+    )
+    base.update(overrides)
+    return RuleAlert(**base)

@@ -1,0 +1,24 @@
+id: win-default-account-logon
+title: Logon By A Built-In Default Account
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4624
+    action: LOGIN_OK
+    target_user: [Guest, DefaultAccount]
+  condition: sel
+mitre:
+  technique: T1078.001
+  tactic: TA0005
+fields: [target_user, source_ip, logon_type, host]
+description: >-
+  A successful logon by the built-in Guest or DefaultAccount account (EventID
+  4624). Both are disabled by default, so a success means someone enabled one
+  or the account was abused. Administrator is not listed: it is a real working
+  account on many machines.
+falsepositives:
+  - A deliberately enabled Guest account (kiosk, lab or shared machine)

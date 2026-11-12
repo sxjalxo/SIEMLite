@@ -1,0 +1,27 @@
+id: pb-persistence
+title: Persistence - Account And Service Creation Response
+match:
+  tactic: TA0003
+  min_severity: MEDIUM
+actions:
+  - name: Disable the account that was created or changed
+    command: ['net', 'user', '{target_user}', '/active:no']
+    undo:    ['net', 'user', '{target_user}', '/active:yes']
+    risk: high
+  - name: Show the account, its groups and its last logon
+    command: ['net', 'user', '{target_user}']
+    risk: low
+  - name: List the local administrators the account may have joined
+    command: ['net', 'localgroup', 'Administrators']
+    risk: low
+  - name: List the scheduled tasks on the host
+    command: ['schtasks', '/query', '/fo', 'LIST', '/v']
+    risk: low
+  - name: Remove the persistence itself
+    manual: true
+    guidance: >
+      Decide what to remove from the alert's evidence: a service
+      (`sc delete <name>`), a scheduled task (`schtasks /delete /tn <name>`),
+      or a Run key value under HKLM or HKCU. Not automated - each of these
+      removes something a legitimate application may own, and the wrong one
+      breaks the host rather than the intrusion.

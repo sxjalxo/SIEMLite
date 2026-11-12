@@ -1,0 +1,39 @@
+id: win-suspicious-scriptblock
+title: Suspicious PowerShell Script Block
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: powershell
+detection:
+  strings:
+    event_id: 4104
+    action: SCRIPTBLOCK
+    command_line|contains:
+      - invoke-expression
+      - downloadstring
+      - downloadfile
+      - frombase64string
+      - net.webclient
+      - amsiutils
+      - invoke-mimikatz
+      - virtualalloc
+  # iex is too short for a substring: "iex" is also inside other words.
+  iex:
+    event_id: 4104
+    action: SCRIPTBLOCK
+    command_line|re: '\biex\b'
+  condition: strings or iex
+mitre:
+  technique: T1059.001
+  tactic: TA0002
+fields: [host, object_name, command_line]
+description: >-
+  A PowerShell script block (EventID 4104) contained a download cradle,
+  Invoke-Expression, in-memory decoding, or an AMSI or shellcode API name. The
+  event carries no user, so the alert is keyed on the host. Windows also logs
+  blocks it finds suspicious even with script block logging off.
+falsepositives:
+  - Legitimate modules and installers that use Invoke-Expression or Net.WebClient (package managers, Chocolatey, vendor setup scripts)
+  - Security tooling and admin scripts that fetch content with DownloadString
+  - Coding agents and other tooling wrappers (Claude Code's PowerShell wrapper uses FromBase64String on every tool call). Not filtered on purpose, so decide per host

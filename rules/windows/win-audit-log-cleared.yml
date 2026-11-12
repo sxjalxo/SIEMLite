@@ -1,0 +1,23 @@
+id: win-audit-log-cleared
+title: Security Audit Log Cleared
+status: stable
+severity: CRITICAL
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 1102
+    action: LOG_CLEARED
+  condition: sel
+mitre:
+  technique: T1070.001
+  tactic: TA0005
+fields: [user, host]
+description: >-
+  The Security event log was cleared (EventID 1102). Clearing it removes the
+  record of what happened before. The System log equivalent (104) is not
+  covered, because the normalizer does not interpret it.
+falsepositives:
+  - An administrator clearing the log on purpose, for example when rebuilding a machine
+  - Log-rotation tooling that clears after archiving

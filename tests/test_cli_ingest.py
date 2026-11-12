@@ -64,6 +64,10 @@ class IngestTestCase(unittest.TestCase):
         except OSError:
             pass
 
+    def seed(self, events):
+        """Store NormalizedEvents in the temp database (rulings R55)."""
+        store.insert_events(self.conn, events)
+
     def run_cli(self, argv):
         code, out, _err = self.run_cli_split(argv)
         return code, out
@@ -337,7 +341,7 @@ class TestTimestampIsNeverInvented(unittest.TestCase):
 
 
 class TestMalformedSshLine(unittest.TestCase):
-    """One bad line costs one line, not the file — and never a traceback."""
+    """One bad line costs one line, not the file - and never a traceback."""
 
     GOOD = ("Feb 10 10:00:0{n} host sshd[1]: Failed password for root "
             "from 1.2.3.{n} port 22 ssh2\n")
@@ -638,6 +642,19 @@ class TestIngestCommand(IngestTestCase):
         with mock.patch.object(wel, "read_channel", side_effect=reader):
             self.run_cli(["ingest"])
         self.assertEqual(["Security"], seen)
+
+
+class TestIngestSourceIsAscii(unittest.TestCase):
+    def test_the_module_has_no_byte_above_127(self):
+        # Ruling R140. One of the three em dashes was INSIDE the string
+        # print_section renders, and print_section's box-drawing rule raises
+        # UnicodeEncodeError on a cp1252 stream unless core.report
+        # .fix_encoding() ran first -- so a printed non-ASCII byte is a latent
+        # crash for any future entry point that forgets that call. The list,
+        # not a bare assertTrue, so a failure names the offending code points.
+        with open(ingest_command.__file__, "rb") as fh:
+            data = fh.read()
+        self.assertEqual([], [hex(b) for b in data if b > 127])
 
 
 if __name__ == "__main__":

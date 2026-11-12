@@ -1,0 +1,23 @@
+id: win-service-installed
+title: New Service Installed
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: system
+detection:
+  sel:
+    event_id: 7045
+    action: SERVICE_INSTALL
+  condition: sel
+mitre:
+  technique: T1543.003
+  tactic: TA0003
+fields: [host, service_name, process, user]
+description: >-
+  A service was installed (System EventID 7045). process is the service
+  ImagePath and user the account it runs as. Services are a common persistence
+  and lateral-movement mechanism (PsExec installs one).
+falsepositives:
+  - Any software install or driver install, including Windows Update and vendor updaters
+  - Admin tools that install a temporary service

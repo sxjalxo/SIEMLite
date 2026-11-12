@@ -44,10 +44,11 @@ def add_parser(subparsers):
     )
     # None, never "" or 0: later verbs' store filters must default to None
     # because core.store.query_events filters with `is not None` (see
-    # cli/__init__.py). The default channel is applied in _split_channels.
+    # cli/__init__.py). The default channel is applied in run().
     parser.add_argument(
         "--channel", action="append", default=None,
-        help="channel to read; repeatable or comma-separated (default: Security)",
+        help="channel to read; repeatable or comma-separated (default: {})".format(
+            ", ".join(DEFAULT_CHANNELS)),
     )
     parser.add_argument(
         "--since", default="24h",
@@ -69,14 +70,22 @@ def add_parser(subparsers):
     return parser
 
 
-def _split_channels(values):
-    """Flatten repeated and comma-separated --channel values."""
-    if not values:
-        return list(DEFAULT_CHANNELS)
+def split_channels(values):
+    """Flatten repeated and comma-separated --channel values.
+
+    Public because `monitor` takes the same flag the same way and reuses this
+    rather than carrying a second splitter (ruling R138); public rather than
+    imported privately because Phase 4's I2 removed the private cross-module
+    imports.
+
+    Returns [] when nothing usable was given, so the caller applies its own
+    default: `monitor` must tell "no flag at all" (default) from
+    `--channel ' , '` (a usage error), and only the caller knows which.
+    """
     channels = []
-    for value in values:
+    for value in values or ():
         channels.extend(part.strip() for part in value.split(",") if part.strip())
-    return channels or list(DEFAULT_CHANNELS)
+    return channels
 
 
 def _store_events(conn, events):
@@ -197,7 +206,7 @@ def _exit_code(results, denied, not_found):
     """0 clean, 1 no channel readable, 3 partial.
 
     3 means one thing on both halves of the verb: something that was asked
-    for was not stored — a denied channel, or records that would not parse.
+    for was not stored - a denied channel, or records that would not parse.
     Silently dropping records is the failure a SIEM can least afford to
     report as success, so it gets the same code as a denied channel rather
     than sharing 0 with a clean run.
@@ -248,7 +257,7 @@ def run(args):
     """Execute ingestion. Returns a process exit code.
 
     Exit codes: 0 clean; 1 nothing completed (every channel denied or not
-    found, or an unreadable file); 3 partial — some of what was asked for did
+    found, or an unreadable file); 3 partial - some of what was asked for did
     not make it: a channel was denied, or a file had skipped rows. A denied
     Security channel is a coverage gap the operator must not miss, but
     unelevated it is permanent, so a partial run gets its own code instead of
@@ -263,7 +272,7 @@ def run(args):
         if args.file:
             return _run_file(conn, args)
 
-        channels = _split_channels(args.channel)
+        channels = split_channels(args.channel) or list(DEFAULT_CHANNELS)
         since = parse_since(args.since)
 
         results = []
@@ -291,7 +300,7 @@ def run(args):
             }, indent=2))
             return _exit_code(results, denied, not_found)
 
-        print_section("Ingestion — backend: {}".format(wel.backend_name()))
+        print_section("Ingestion - backend: {}".format(wel.backend_name()))
         for result in results:
             print_info("{:<45} read {:>6}  stored {:>6}  skipped {}".format(
                 result["channel"], result["read"], result["inserted"],

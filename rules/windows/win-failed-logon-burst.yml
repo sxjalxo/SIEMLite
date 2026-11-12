@@ -1,0 +1,38 @@
+id: win-failed-logon-burst
+title: Failed Logon Burst Against One Account From One Source
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4625
+    action: LOGIN_FAIL
+  # target_user is the name that was TRIED, so it is chosen by whoever is
+  # guessing. Each entry is therefore the whole of a service-account name
+  # (DWM-n and UMFD-n session helpers, Exchange's HealthMailbox + hex), never
+  # a prefix: "UMFD-bob" is an ordinary account and must still alert. \Z, not
+  # $, which would also accept a trailing newline: "UMFD-1" + newline.
+  filter:
+    target_user|re: '^(dwm-\d+|umfd-\d+|healthmailbox[0-9a-f]+)\Z'
+  timeframe: 5m
+  count:
+    gte: 5
+    group_by: [source_ip, target_user]
+  condition: sel and not filter
+mitre:
+  technique: T1110.001
+  tactic: TA0006
+fields: [source_ip, target_user, workstation, host]
+description: >-
+  Five or more failed logons (EventID 4625) for one account from one source
+  address within five minutes, the signature of password guessing. Counts per
+  account, so one address trying a few passwords each against many accounts
+  (password spraying) stays under the threshold; win-rdp-logon-failure-burst
+  counts per address instead. One alert per burst: the window resets when it
+  fires.
+falsepositives:
+  - A user, service or scheduled task with a stale saved password retrying (mapped drive, mail client, scheduled job)
+  - An unrecorded source address. Windows writes the address as "-" on NTLM and Kerberos pass-through failures, so source_ip is "-" and every such failure for one account pools into one window whatever the real origin. Grouping on workstation instead is a site decision, since workstation is only filled on 4625
+  - Vulnerability scanners and monitoring probes testing logons

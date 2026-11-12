@@ -1,0 +1,26 @@
+id: win-off-hours-logon
+title: Interactive Logon Outside Business Hours
+status: experimental
+severity: LOW
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4624
+    action: LOGIN_OK
+    logon_type: 2
+    # Local time, 07:00 to 19:59 inclusive is business hours. Edit per site.
+    timestamp|hour_not_in: ['7..19']
+  condition: sel
+mitre:
+  technique: T1078
+  tactic: TA0005
+fields: [user, host]
+description: >-
+  A successful interactive (type 2) logon outside 07:00-19:59 local time.
+  Weekends are not treated differently.
+falsepositives:
+  - Business hours are a local policy, so this is the rule most likely to need editing per site (the hour range under sel)
+  - Shift workers, on-call staff and anyone working late
+  - The session helper accounts DWM-n and UMFD-n are logged as type 2 on every interactive logon

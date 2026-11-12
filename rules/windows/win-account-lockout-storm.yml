@@ -1,0 +1,30 @@
+id: win-account-lockout-storm
+title: Several Account Lockouts On One Host
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4740
+    action: ACCOUNT_LOCKOUT
+  timeframe: 10m
+  count:
+    gte: 3
+    group_by: [host]
+  condition: sel
+mitre:
+  technique: T1110
+  tactic: TA0006
+fields: [target_user, object_name, host]
+description: >-
+  Three or more account lockouts (EventID 4740) recorded by one machine within
+  ten minutes. A single lockout is routine; several at once is what guessing
+  against many accounts looks like. host is the machine that logged the
+  lockout, normally a domain controller, and object_name is the computer the
+  attempts came from.
+falsepositives:
+  - A bad password pushed to many machines or services at once, for example after a forced password change
+  - A shared service account used by several hosts with an old password
+  - Each domain controller logs its own lockout events, so one real incident is counted per controller, not once

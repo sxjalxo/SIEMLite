@@ -27,16 +27,37 @@ try:
     from rich.live import Live
     from rich.progress import Progress, BarColumn
     from rich.text import Text
+    from rich.markup import escape
     from rich import box
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
+
+    def escape(value):
+        """Without rich there is no markup to escape, and no table either."""
+        return value
 
 from core.report import Colors, print_ok, print_info, print_warn, print_error, fix_encoding
 from core.database import (
     get_alerts, get_alert_stats, get_top_ips, get_status_distribution,
     get_alert_timeline, get_scans, get_log_stats, init_database
 )
+from cli.render import plain
+
+
+def cell(value):
+    """A stored value safe to hand to rich's table.add_row() (ruling R30).
+
+    `plain` makes every control character visible, so an ESC in a log field
+    cannot drive the terminal, and `escape` stops rich reading the field as
+    markup -- a detail of "[red]FORGED[/red]" rendered as colour before this,
+    with the tags swallowed, which is also why a test here asserts the LITERAL
+    tag rather than the word inside it.
+
+    rich does not markup-parse a `Text` object, so the severity cells that
+    already pass `Text(...)` were never on this path.
+    """
+    return escape(plain(value))
 
 
 # ─────────────────────────────────────────────
@@ -151,7 +172,7 @@ class CLIDashboard:
         table.add_column("Request Count", style="green")
         
         for ip_data in top_ips[:10]:
-            table.add_row(ip_data["ip"], str(ip_data["request_count"]))
+            table.add_row(cell(ip_data["ip"]), str(ip_data["request_count"]))
         
         if not top_ips:
             table.add_row("No data available", "-")
@@ -200,8 +221,8 @@ class CLIDashboard:
             
             table.add_row(
                 Text(severity, style=severity_style),
-                alert.get("category", "Unknown"),
-                detail
+                cell(alert.get("category", "Unknown")),
+                cell(detail)
             )
         
         if not alerts:
@@ -239,7 +260,7 @@ class CLIDashboard:
             }.get(severity, "white")
             
             table.add_row(
-                hour,
+                cell(hour),
                 Text(severity, style=severity_style),
                 str(count)
             )
@@ -258,7 +279,7 @@ class CLIDashboard:
         
         for scan in scans[:5]:
             table.add_row(
-                scan.get("target_url", "Unknown")[:30],
+                cell(scan.get("target_url", "Unknown")[:30]),
                 str(scan.get("total_findings", 0)),
                 str(scan.get("critical_count", 0))
             )

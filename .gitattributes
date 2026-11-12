@@ -1,0 +1,15 @@
+# Line endings (ruling R149).
+#
+# core.autocrlf=true normalises to LF in the index on commit and converts to
+# CRLF on checkout. The index is already LF, so commits were never the problem:
+# the exposure was the other direction. A fresh clone or `git checkout --` would
+# have written CRLF into the WORKING TREE, which is where every hygiene check on
+# this project reads, so the "no CRLF" rule was unenforced against checkout.
+#
+# eol=lf pins LF on both sides and makes that rule actually enforceable. It was
+# verified to be a no-op for existing content before being added: all 62 tracked
+# files already store LF in HEAD, so this creates no phantom diff.
+#
+# text=auto still detects binary by content, so a binary file added later is
+# left alone without needing a rule of its own.
+* text=auto eol=lf

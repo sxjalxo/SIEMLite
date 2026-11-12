@@ -8,7 +8,9 @@ Storing events is not optional — investigation and timeline are pure queries
 over history — so the store is the design centre rather than a side effect.
 """
 
+import json
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from core.timeutil import to_local_naive
@@ -138,6 +140,7 @@ ALERT_COLUMNS = (
     ("event_ids", "TEXT"),
     ("incident_id", "INTEGER"),
     ("status", "TEXT DEFAULT 'NEW'"),
+    ("alert_hash", "TEXT"),
 )
 
 
@@ -159,9 +162,15 @@ def connect(db_path=None):
     path = Path(db_path) if db_path else DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except BaseException:
+        # A file that is not a database fails on the first PRAGMA. Close here:
+        # left to the garbage collector it holds the file open on Windows.
+        conn.close()
+        raise
     return conn
 
 
@@ -179,6 +188,13 @@ def init_schema(conn):
                     table, name, decl))
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alerts(incident_id)"
+    )
+    # Not in SCHEMA: alert_hash is added by the migration above, so on a store
+    # that already has `alerts` the index would be created before its column.
+    # UNIQUE makes `detect` re-runnable; NULLs are distinct in a UNIQUE index,
+    # so legacy alert rows (no hash) coexist.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_hash ON alerts(alert_hash)"
     )
     conn.commit()
 
@@ -301,8 +317,8 @@ def query_events(conn, since=None, until=None, source_ip=None, user=None,
 
     `limit` defaults to 1000 to protect interactive output. `limit=None` emits
     no LIMIT clause: a batch reader that must see a whole window has to pass it
-    explicitly or it silently works on the newest 1000 rows only. A negative
-    limit reaches SQLite as-is, where -1 also means no limit.
+    explicitly or it silently works on the first 1000 rows in `order` (the
+    oldest, by default) only. A negative limit reaches SQLite as-is, where -1 also means no limit.
     """
     clauses = []
     params = []
@@ -360,3 +376,247 @@ def set_bookmark(conn, channel, record_id):
             "last_run = excluded.last_run",
             (channel, int(record_id)),
         )
+
+
+def _ts(value):
+    """A datetime as the stored text form: local naive, like events."""
+    return to_local_naive(value).isoformat(sep=" ")
+
+
+def _where(time_col, since, until, equals):
+    """WHERE clause and params from time bounds and (column, value) pairs.
+
+    `is not None`, not truthiness (R21): incident_id=0 or "" filter on that
+    value instead of matching everything. Column names are fixed by the
+    callers; only values are caller input.
+    """
+    clauses, params = [], []
+    if since is not None:
+        clauses.append(time_col + " >= ?")
+        params.append(_ts(since))
+    if until is not None:
+        clauses.append(time_col + " <= ?")
+        params.append(_ts(until))
+    for col, val in equals:
+        if val is not None:
+            clauses.append(col + " = ?")
+            params.append(val)
+    return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
+
+
+def _limit(sql, params, limit):
+    """Append LIMIT unless limit is None (a batch reader must see everything)."""
+    if limit is None:
+        return sql
+    params.append(int(limit))
+    return sql + " LIMIT ?"
+
+
+_ALERT_INSERT_COLUMNS = (
+    "timestamp", "category", "severity", "detail", "evidence", "source",
+    "mitre_technique_id", "mitre_tactic_id", "rule_id", "rule_title",
+    "entity_type", "entity_value", "event_ids", "alert_hash",
+)
+_ALERT_INSERT_SQL = (
+    "INSERT INTO alerts ({}) VALUES ({}) ON CONFLICT(alert_hash) DO NOTHING".format(
+        ", ".join(_ALERT_INSERT_COLUMNS), ", ".join("?" for _ in _ALERT_INSERT_COLUMNS))
+)
+
+
+def insert_alerts(conn, alerts):
+    """Insert RuleAlerts, skipping any already stored (same alert_hash).
+
+    Returns the number of rows actually written. Re-running detection over an
+    overlapping window therefore adds only the new alerts.
+
+    Transaction semantics match insert_events, with one batch: the whole call
+    is one transaction. It commits any uncommitted work the caller already had
+    open on this connection; if any alert raises (sqlite3.IntegrityError on a
+    NOT NULL violation, say) every alert in the call is rolled back and the
+    count is lost. Re-running is idempotent.
+
+    The MITRE ids are stored in the pre-existing mitre_* columns (R53): the
+    correlator recomputes an incident's tactics from its member alert rows.
+    """
+    rows = [(
+        _ts(a.timestamp), a.category, a.severity, a.detail, a.evidence, a.source,
+        a.technique, a.tactic, a.rule_id, a.rule_title, a.entity_type,
+        a.entity_value, json.dumps(list(a.event_hashes)), a.alert_hash,
+    ) for a in alerts]
+    with conn:
+        return conn.executemany(_ALERT_INSERT_SQL, rows).rowcount
+
+
+def query_alerts(conn, since=None, until=None, severity=None, rule_id=None,
+                 entity=None, status=None, incident_id=None, limit=1000,
+                 order="desc"):
+    """Fetch stored alerts matching the given filters, newest first by default.
+
+    Same four properties as query_events: `is not None` filters, bounds through
+    to_local_naive, `order` through an allow-list, `limit=None` meaning no LIMIT.
+    `entity` matches entity_value. Legacy rows (no rule_id or entity) are
+    included unless a filter excludes them.
+    """
+    where, params = _where("timestamp", since, until, (
+        ("severity", severity), ("rule_id", rule_id), ("entity_value", entity),
+        ("status", status), ("incident_id", incident_id)))
+    try:
+        direction = _ORDER[str(order).lower()]
+    except KeyError:
+        raise ValueError("order must be 'asc' or 'desc', got {!r}".format(order))
+    sql = "SELECT * FROM alerts{} ORDER BY timestamp {}, id {}".format(
+        where, direction, direction)
+    return conn.execute(_limit(sql, params, limit), params).fetchall()
+
+
+# Well under SQLITE_MAX_VARIABLE_NUMBER's pre-3.32 default of 999.
+_HASH_CHUNK = 500
+
+
+def events_by_hash(conn, hashes):
+    """Stored events for the given event_hashes as [(stored_hash, event)],
+    oldest first.
+
+    Unknown hashes are skipped. An alert names its events by hash, so this is
+    how a timeline gets them back. The IN list is chunked for older SQLite
+    builds, and the rows are sorted after concatenation: a per-chunk order
+    would not be a global one.
+
+    The hash comes back with the event because NormalizedEvent recomputes
+    `event_hash` from host, channel, record_id and raw, so a row edited after
+    it was written no longer hashes to the key it is stored under. A caller
+    that recomputed it would silently unhook the event from the alerts citing
+    it, and would not be able to see that it had (ruling R105).
+    """
+    hashes = list(dict.fromkeys(hashes))
+    rows = []
+    for i in range(0, len(hashes), _HASH_CHUNK):
+        chunk = hashes[i:i + _HASH_CHUNK]
+        rows.extend(conn.execute(
+            "SELECT * FROM events WHERE event_hash IN ({})".format(
+                ", ".join("?" for _ in chunk)), chunk))
+    rows.sort(key=lambda r: (r["timestamp"], r["id"]))
+    return [(r["event_hash"], NormalizedEvent.from_row(r)) for r in rows]
+
+
+def _tactics(value):
+    """tactics as stored: a list is JSON-encoded, a string is kept as-is,
+    None is no tactics."""
+    if value is None:
+        return "[]"
+    return value if isinstance(value, str) else json.dumps(list(value))
+
+
+def open_incident(conn, opened_at, last_seen, entity_type, entity_value,
+                  severity, score=0, tactics=(), title=None):
+    """Create an OPEN incident and return its id."""
+    with conn:
+        return conn.execute(
+            "INSERT INTO incidents (opened_at, last_seen, entity_type, "
+            "entity_value, severity, score, tactics, title) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (_ts(opened_at), _ts(last_seen), entity_type, entity_value,
+             severity, int(score), _tactics(tactics), title)).lastrowid
+
+
+def find_open_incident(conn, entity_type, entity_value, window_start):
+    """The most recently seen OPEN incident for an entity active since
+    `window_start`, or None. Type and value are both matched: user 1.2.3.4
+    and ip 1.2.3.4 are different entities."""
+    return conn.execute(
+        "SELECT * FROM incidents WHERE status = 'OPEN' AND entity_type = ? "
+        "AND entity_value = ? AND last_seen >= ? "
+        "ORDER BY last_seen DESC, id DESC LIMIT 1",
+        (entity_type, entity_value, _ts(window_start))).fetchone()
+
+
+# The column names reach the SQL text in update_incident, so they are
+# allow-listed (R22). `id` is deliberately absent.
+_INCIDENT_COLUMNS = ("opened_at", "last_seen", "entity_type", "entity_value",
+                     "severity", "score", "tactics", "status", "title")
+
+
+def update_incident(conn, incident_id, **fields):
+    """Set the given columns on an incident; the rest are left alone.
+
+    Returns the number of rows changed: 1, or 0 for an unknown incident_id.
+    Raises ValueError on an unknown column, and on no fields at all: returning
+    0 there would be indistinguishable from "no such incident". `tactics` as a
+    list is JSON-encoded; datetimes in opened_at/last_seen are stored local
+    naive.
+    """
+    unknown = sorted(set(fields) - set(_INCIDENT_COLUMNS))
+    if unknown:
+        raise ValueError("unknown incident column(s): {}".format(", ".join(unknown)))
+    if not fields:
+        raise ValueError("no fields to update")
+    if "tactics" in fields:
+        fields["tactics"] = _tactics(fields["tactics"])
+    for col in ("opened_at", "last_seen"):
+        if isinstance(fields.get(col), datetime):
+            fields[col] = _ts(fields[col])
+    with conn:
+        return conn.execute(
+            "UPDATE incidents SET {} WHERE id = ?".format(
+                ", ".join(c + " = ?" for c in fields)),
+            list(fields.values()) + [incident_id]).rowcount
+
+
+def close_incident(conn, incident_id):
+    """Mark an incident CLOSED. Returns 1, or 0 for an unknown incident_id."""
+    return update_incident(conn, incident_id, status="CLOSED")
+
+
+IDLE_TIMEOUT = timedelta(hours=2)
+
+
+def close_idle_incidents(conn, now=None, idle_timeout=IDLE_TIMEOUT):
+    """Close OPEN incidents idle for MORE than `idle_timeout`; return how many.
+
+    Idle for exactly the timeout stays open, matching the correlation window
+    where exactly one window later still joins. `now=None` is the clock, not a
+    fallback for a value that failed to parse. The cutoff is written with `_ts`
+    so it compares as text against the stored `last_seen`; that is why this
+    lives here and not in the correlator.
+    """
+    cutoff = _ts((now or datetime.now()) - idle_timeout)
+    with conn:
+        return conn.execute(
+            "UPDATE incidents SET status = 'CLOSED' "
+            "WHERE status = 'OPEN' AND last_seen < ?", (cutoff,)).rowcount
+
+
+def attach_alerts(conn, incident_id, alert_ids):
+    """Point each alert (by row id) at an incident; return how many were.
+
+    Raises ValueError for an unknown incident_id rather than returning 0: the
+    column has no foreign key, so writing it would leave a dangling reference,
+    and 0 would be indistinguishable from "no such alert ids". Alert ids that
+    do not exist are simply not counted.
+    """
+    with conn:
+        if conn.execute("SELECT 1 FROM incidents WHERE id = ?",
+                        (incident_id,)).fetchone() is None:
+            raise ValueError("no such incident: {!r}".format(incident_id))
+        return conn.executemany("UPDATE alerts SET incident_id = ? WHERE id = ?",
+                                [(incident_id, a) for a in alert_ids]).rowcount
+
+
+# Every incident ordering is "most important first", so all are descending.
+_INCIDENT_ORDER = {c: c + " DESC, id DESC"
+                   for c in ("score", "last_seen", "opened_at")}
+
+
+def query_incidents(conn, incident_id=None, status=None, entity=None,
+                    since=None, limit=1000, order="score"):
+    """Fetch incidents, most important first. `since` bounds last_seen;
+    `entity` matches entity_value."""
+    where, params = _where("last_seen", since, None, (
+        ("id", incident_id), ("status", status), ("entity_value", entity)))
+    try:
+        ordering = _INCIDENT_ORDER[str(order).lower()]
+    except KeyError:
+        raise ValueError("order must be one of {}, got {!r}".format(
+            sorted(_INCIDENT_ORDER), order))
+    sql = "SELECT * FROM incidents{} ORDER BY {}".format(where, ordering)
+    return conn.execute(_limit(sql, params, limit), params).fetchall()

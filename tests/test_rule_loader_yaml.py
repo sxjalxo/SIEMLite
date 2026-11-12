@@ -59,6 +59,7 @@ class TestValidRule(RuleFileCase):
         self.assertEqual("T1110.001", rule.technique)
         self.assertEqual("TA0006", rule.tactic)
         self.assertEqual({"sel", "filter"}, set(rule.selections))
+        self.assertEqual("sel and not filter", rule.condition_text)
         self.assertTrue(rule.condition.evaluate({"sel": True, "filter": False}))
 
     def test_source_file_is_recorded_for_error_messages_and_rules_show(self):

@@ -1,0 +1,55 @@
+id: sysmon-office-spawn
+title: Office Application Spawned A Process
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  sel:
+    event_id: 1
+    action: PROCESS_CREATE
+    # Sysmon's ParentImage is the full path, so match its end. The leading
+    # backslash makes it a whole file name: "evilexcel.exe" is not excel.exe.
+    parent_process|endswith:
+      - \winword.exe
+      - \excel.exe
+      - \powerpnt.exe
+      - \outlook.exe
+      - \mspub.exe
+      - \msaccess.exe
+      - \visio.exe
+      - \onenote.exe
+  # Children Office starts on its own account, excused only at the exact path
+  # Windows installs them to. The child's path is the spawned binary's own, so
+  # it is whatever a macro chose: a bare file name would excuse a payload
+  # called WerFault.exe in any directory. Anchored at "c:\windows", which a
+  # standard user cannot write to, and ended with \Z (not $, which accepts a
+  # trailing newline). Drive c: is an APPROXIMATION, not a fact: %SystemRoot%
+  # is not a matchable field. A secondary volume is writable by a standard
+  # user, so d:\windows\system32 must not count; a Windows installed elsewhere
+  # gets extra alerts, never missed ones. Add a child here only with its
+  # reason beside it.
+  filter:
+    process|re:
+      # WerFault.exe: the crash reporter, run when an Office application dies.
+      - '^c:\\windows\\(system32|syswow64)\\werfault\.exe\Z'
+      # splwow64.exe: the print helper 32-bit Office uses on 64-bit Windows.
+      - '^c:\\windows\\splwow64\.exe\Z'
+  condition: sel and not filter
+mitre:
+  technique: T1566.001
+  tactic: TA0002
+fields: [user, parent_process, process, command_line, host]
+description: >-
+  A Microsoft Office application started a child process (Sysmon EventID 1).
+  A macro or an exploited document launching a program is how a phishing
+  attachment runs code. Matches on the parent, whatever the child is, except
+  WerFault.exe and splwow64.exe at their Windows paths (the crash reporter and
+  the print helper), so expect to tune it. Needs Sysmon installed and its
+  process-creation events collected; with no Sysmon channel there are no such
+  events and the rule never fires.
+falsepositives:
+  - Office starting its own helpers other than the two excused ones (update and telemetry agents, add-in hosts)
+  - Outlook launching a browser, a PDF reader or an attachment's default handler
+  - Add-ins and macros that deliberately start programs, in finance and reporting workflows

@@ -1,0 +1,36 @@
+id: sysmon-suspicious-outbound
+title: Shell Or Script Host Network Connection On A High Port
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  sel:
+    event_id: 3
+    action: NETWORK_CONNECT
+    # Sysmon's Image is the full path, so match its end, as a whole file name.
+    process|endswith:
+      - \cmd.exe
+      - \powershell.exe
+      - \pwsh.exe
+      - \wscript.exe
+      - \cscript.exe
+      - \mshta.exe
+    dest_port|gt: 1024
+  condition: sel
+mitre:
+  technique: T1071
+  tactic: TA0011
+fields: [user, process, dest_ip, dest_port, host]
+description: >-
+  A command shell or script host made a network connection to a port above
+  1024 (Sysmon EventID 3). Reverse shells and command-and-control channels
+  commonly use such ports. Sysmon also logs inbound connections under this
+  event, so a shell that is listening can match too. Needs Sysmon installed
+  and its network-connection events collected; with no Sysmon channel there
+  are no such events and the rule never fires.
+falsepositives:
+  - PowerShell remoting (WinRM, ports 5985 and 5986) and other administration tools run from a shell
+  - Package managers and scripts that download over HTTPS on a non-standard port
+  - Developer machines running local servers started from a shell

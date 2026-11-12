@@ -1,0 +1,56 @@
+id: win-lolbin-execution
+title: Living-Off-The-Land Binary Executed
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4688
+    action: PROCESS_CREATE
+    # process is the full image path in a real 4688, so match its end.
+    process|endswith:
+      - certutil.exe
+      - mshta.exe
+      - regsvr32.exe
+      - rundll32.exe
+      - bitsadmin.exe
+      - wmic.exe
+      - cscript.exe
+      - wscript.exe
+      - msbuild.exe
+      - installutil.exe
+      - regasm.exe
+      - regsvcs.exe
+      - cmstp.exe
+      - odbcconf.exe
+      - forfiles.exe
+  # The one known-good case: rundll32.exe from the real Windows\System32 (or
+  # SysWOW64), run with no arguments at all. It does nothing, so it is not
+  # execution of anything. The path is anchored at "c:\windows", so a copy
+  # under C:\evil\system32 is not excused. Drive c: is an APPROXIMATION, not
+  # a fact: %SystemRoot% is not a matchable field, and a secondary volume is
+  # writable by a standard user, who could create D:\Windows\System32 and put
+  # a copy there, so any-drive would be attacker-satisfiable. If Windows is
+  # installed elsewhere the symptom is extra alerts, never missed ones. The
+  # command line may be the bare name or a path, quoted or not, and must hold
+  # no space before "rundll32": otherwise "rundll32 evil.dll,Run rundll32"
+  # would pass as an empty command line. Add a case here only with a reason
+  # beside it.
+  filter:
+    process|re: '^c:\\windows\\(system32|syswow64)\\rundll32\.exe$'
+    command_line|re: '^"?[^"\s]*rundll32(\.exe)?"?\s*$'
+  condition: sel and not filter
+mitre:
+  technique: T1218
+  tactic: TA0005
+fields: [user, process, command_line, parent_process, host]
+description: >-
+  A signed Windows binary that can download, load or run arbitrary code was
+  started. Matches on the binary alone, not on how it was used, so expect to
+  tune it. Needs command-line auditing to be useful for triage.
+falsepositives:
+  - rundll32.exe, wmic.exe, cscript.exe and wscript.exe are run by Windows and by administrators constantly
+  - msbuild.exe and installutil.exe on developer machines and build servers
+  - certutil.exe used by administrators to inspect certificates

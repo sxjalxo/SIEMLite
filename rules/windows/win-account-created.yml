@@ -1,0 +1,22 @@
+id: win-account-created
+title: Local User Account Created
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4720
+    action: ACCOUNT_CREATE
+  condition: sel
+mitre:
+  technique: T1136.001
+  tactic: TA0003
+fields: [target_user, user, host]
+description: >-
+  A user account was created (EventID 4720). target_user is the new account,
+  user is the account that created it. New accounts are a common persistence step.
+falsepositives:
+  - Helpdesk or onboarding creating accounts
+  - Software installers that create a service or local account

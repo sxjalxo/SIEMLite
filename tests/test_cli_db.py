@@ -1,10 +1,13 @@
+import gc
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,7 +34,18 @@ class TestParser(unittest.TestCase):
         self.assertEqual("init", args.action)
 
     def test_command_names_reads_module_constants(self):
-        self.assertEqual({"db", "ingest"}, cli.command_names())
+        self.assertEqual({"db", "ingest", "rules", "detect", "alerts", "incidents",
+                          "investigate", "timeline", "mitre", "respond", "report",
+                          "monitor"},
+                         cli.command_names())
+
+    def test_the_parser_description_is_ascii(self):
+        # It prints on every `siem --help`. A non-ASCII byte there needs
+        # fix_encoding() to have run and renders as a replacement character
+        # when it has not -- the same cp1252 exposure ruling R120 removed
+        # from rules/.
+        description = cli.build_parser().description
+        self.assertEqual([], [hex(ord(c)) for c in description if ord(c) > 127])
 
     def test_command_names_is_derived_from_registered_modules(self):
         stub = SimpleNamespace(NAME="stub")
@@ -215,6 +229,73 @@ class TestDbCommand(unittest.TestCase):
     def test_unknown_action_is_usage_error(self):
         with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
             cli.build_parser().parse_args(["db", "frobnicate"])
+
+
+class TestCorruptDatabase(unittest.TestCase):
+    """A --db that is not a SQLite file is a failure to run (1), never a
+    traceback, and never a usage error (2): the user's argument was well formed."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = str(Path(directory.name) / "junk.db")
+        Path(self.path).write_bytes(b"this is not a sqlite database" * 100)
+
+    def run_verb(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = cli.dispatch(["--db", self.path, *argv])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_every_verb_that_opens_the_store_exits_1_with_a_message(self):
+        for argv in (("alerts",), ("db", "stats"), ("detect",), ("ingest", "--file", "x")):
+            code, out, _ = self.run_verb(*argv)
+            self.assertEqual(1, code, argv)
+            self.assertIn("file is not a database", out, argv)
+
+    def test_json_mode_keeps_stdout_empty_and_the_message_on_stderr(self):
+        code, out, err = self.run_verb("--json", "alerts")
+        self.assertEqual((1, ""), (code, out))
+        self.assertIn("file is not a database", err)
+
+    def test_connect_closes_the_connection_it_could_not_finish_opening(self):
+        # The PRAGMA fails on a non-database file. The half-open connection must
+        # be closed there, not left to the garbage collector: on Windows it holds
+        # the file, and it is a ResourceWarning everywhere.
+        conn = mock.MagicMock()
+        conn.execute.side_effect = sqlite3.DatabaseError("file is not a database")
+        with mock.patch.object(store.sqlite3, "connect", return_value=conn):
+            with self.assertRaises(sqlite3.DatabaseError):
+                store.connect(self.path)
+        conn.close.assert_called_once_with()
+
+    def test_connect_closes_on_an_interrupt_too(self):
+        conn = mock.MagicMock()
+        conn.execute.side_effect = KeyboardInterrupt
+        with mock.patch.object(store.sqlite3, "connect", return_value=conn):
+            with self.assertRaises(KeyboardInterrupt):
+                store.connect(self.path)
+        conn.close.assert_called_once_with()
+
+    def test_a_failed_connect_leaves_no_unclosed_database_behind(self):
+        gc.collect()  # other tests' garbage must not be blamed on this one
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaises(sqlite3.DatabaseError):
+                store.connect(self.path)
+            gc.collect()
+        self.assertEqual([], [str(w.message) for w in caught
+                              if issubclass(w.category, ResourceWarning)])
+
+    def test_a_successful_connect_is_still_open(self):
+        conn = store.connect(str(Path(self.path).with_name("good.db")))
+        self.addCleanup(conn.close)
+        self.assertEqual(1, conn.execute("SELECT 1").fetchone()[0])
+
+    def test_the_file_is_left_as_it_was(self):
+        before = Path(self.path).read_bytes()
+        self.run_verb("alerts")
+        self.assertEqual(before, Path(self.path).read_bytes())
 
 
 class TestLegacyWiring(unittest.TestCase):

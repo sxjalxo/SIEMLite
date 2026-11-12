@@ -1,0 +1,31 @@
+id: win-encoded-powershell
+title: PowerShell Started With An Encoded Command
+status: stable
+severity: HIGH
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4688
+    action: PROCESS_CREATE
+    # process is the full image path in a real 4688, so match its end.
+    process|endswith: [powershell.exe, pwsh.exe, powershell_ise.exe]
+    # PowerShell accepts any prefix of -EncodedCommand, and -ec. List them all
+    # rather than "en[a-z]*", which would also match -Encoding, a routine
+    # parameter. Single quotes keep the backslashes literal.
+    command_line|re: '\s[-/](e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\s'
+  condition: sel
+mitre:
+  technique: T1027.010
+  tactic: TA0005
+fields: [user, process, command_line, host]
+description: >-
+  powershell.exe or pwsh.exe was started with -EncodedCommand or one of its
+  abbreviations, which hides the script from a casual reading of the command
+  line. Needs "Include command line in process creation events" enabled, or
+  command_line is empty and this rule cannot fire.
+falsepositives:
+  - Management and deployment tools (SCCM, Intune, some backup agents) that pass encoded commands
+  - Installers that wrap PowerShell calls in -EncodedCommand
+  - Coding agents and other tooling wrappers (Claude Code's PowerShell wrapper does this on every tool call). Not filtered on purpose, so decide per host

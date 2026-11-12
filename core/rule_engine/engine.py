@@ -16,12 +16,21 @@ it. The rule is reported once per pass, not once per event.
 An alert names its events by event_hash, never by row id: NormalizedEvent has
 no id, and EVENT_FIELDS is derived from its fields, so adding one would make
 the row id a field a rule could match.
+
+Plugins are the rules YAML cannot express: an ordered sequence across two
+EventIDs. They subclass PluginRule below and are evaluated once over the whole
+event list, not per event, because a sequence is only visible across events.
+They are Python files run with the engine's own privileges, so a plugins
+directory is code you trust, unlike a YAML pack.
 """
 
 import hashlib
+import importlib.util
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 
+from core.rule_engine.loader import RuleError
 from core.rule_engine.matcher import match_event
 from core.rule_engine.threshold import ThresholdTracker
 
@@ -73,19 +82,34 @@ class RuleAlert:
 
 
 def entity_for(rule, event):
-    """(entity_type, entity_value): group_by[0] for a threshold rule, else fields[0]."""
-    name = (rule.group_by or rule.fields)[0]
-    return ENTITY_TYPES.get(name, name), _text(getattr(event, name))
+    """(entity_type, entity_value): group_by[0] for a threshold rule, else fields[0].
+
+    R90: when that value is not known ("-" is Windows' "not recorded", or
+    empty), the next declared field whose value is known, and finally host. An
+    entity of "-" would give every such alert of a rule the same entity, and
+    the correlator would merge unrelated machines into one incident. host is
+    never "-": parse_event_xml requires Computer.
+    """
+    first = (rule.group_by or rule.fields)[0]
+    for name in (first, *rule.fields, "host"):
+        value = _text(getattr(event, name))
+        if value not in ("", "-"):
+            return ENTITY_TYPES.get(name, name), value
+    return ENTITY_TYPES.get(first, first), _text(getattr(event, first))
 
 
-def _alert(rule, events):
-    """The alert for the events that fired `rule`."""
+def _alert(rule, events, entity=None):
+    """The alert for the events that fired `rule`.
+
+    `entity` is an (entity_type, entity_value) a plugin names itself; a YAML
+    rule's entity is read from its newest event.
+    """
     # Oldest first, ties broken by hash, not by arrival: a window with no
     # group_by spans entities, and the same window re-detected in a different
     # order must name the same entity and store the same evidence.
     events = sorted(events, key=lambda e: (e.timestamp, e.event_hash))
     newest = events[-1]
-    entity_type, entity_value = entity_for(rule, newest)
+    entity_type, entity_value = entity or entity_for(rule, newest)
     names = rule.fields or rule.group_by
     return RuleAlert(
         rule_id=rule.id,
@@ -108,14 +132,96 @@ def _alert(rule, events):
     )
 
 
-def run_rules(events, rules, plugins=()):
-    """Apply every rule to every event -> (alerts, failures).
+def _failure(rule_id, exc):
+    message = str(exc) if isinstance(exc, ValueError) else (
+        "{}: {}".format(type(exc).__name__, exc))
+    return rule_id, _one_line(message)
 
-    Always a two-tuple. `failures` is a list of (rule_id, message), one per
-    failing rule.
+
+class PluginRule:
+    """Base class for a rule that detects a sequence YAML cannot express.
+
+    Subclass it in a module under rules/plugins/ named `Rule`, set the class
+    attributes and implement evaluate(). Build alerts with make_alert, never by
+    hand: it gets alert_hash, the canonical event order and the stored columns
+    right. This deliberately does not extend core.detection_engine.DetectionRule,
+    which takes legacy LogEvents, not NormalizedEvents.
+
+    A module is loaded without being registered in sys.modules, so a plugin
+    that uses @dataclass together with `from __future__ import annotations`
+    fails to load (an AttributeError in the errors list): leave that import out.
     """
-    if plugins:
-        raise NotImplementedError("plugin rules are not supported yet")
+
+    id = title = severity = technique = tactic = description = entity_field = None
+    # Evidence columns stored per event, like a YAML rule's `fields`.
+    fields = ("event_id", "action", "user", "target_user", "source_ip", "host")
+
+    def evaluate(self, events):
+        """Every RuleAlert for this list of NormalizedEvents (once per run)."""
+        raise NotImplementedError
+
+    def make_alert(self, events, entity_value, **overrides):
+        """The RuleAlert for `events`, about `entity_value` (a `entity_field`).
+
+        R92: an unknown entity ("-" or empty) falls back to the newest event's
+        host, as entity_for does for a YAML rule. The correlator groups by
+        entity, so "-" would merge unrelated machines into one incident.
+        """
+        entity = (ENTITY_TYPES.get(self.entity_field, self.entity_field),
+                  _text(entity_value))
+        if entity[1] in ("", "-"):
+            newest = max(events, key=lambda e: (e.timestamp, e.event_hash))
+            entity = ("host", _text(newest.host))
+        alert = _alert(self, events, entity)
+        return replace(alert, **overrides) if overrides else alert
+
+
+def load_plugins(directory):
+    """Load each rules/plugins-style *.py in `directory` -> (plugins, errors).
+
+    A module's `Rule` class, if it subclasses PluginRule, is instantiated; a
+    module without one is a helper and skipped silently. Names starting with an
+    underscore (__init__) are skipped. A plugin that fails to import or build is
+    an error in the list, never an exception, and the first of two equal ids
+    wins. Modules are loaded from their path and not registered in sys.modules.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        return [], [RuleError(str(directory), None, "plugins directory does not exist")]
+    by_id, errors = {}, []
+    for path in sorted(directory.glob("*.py"), key=lambda p: p.name):
+        if path.name.startswith("_"):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("siem_plugin_" + path.stem, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            cls = getattr(module, "Rule", None)
+            if not (isinstance(cls, type) and issubclass(cls, PluginRule)):
+                continue
+            plugin = cls()
+            if not plugin.id or plugin.severity not in SEVERITY_WEIGHTS:
+                raise ValueError("needs an id and a severity of {}, got {!r} and {!r}".format(
+                    "/".join(SEVERITY_WEIGHTS), plugin.id, plugin.severity))
+        except Exception as exc:
+            errors.append(RuleError(
+                str(path), None, "{}: {}".format(type(exc).__name__, _one_line(exc))))
+            continue
+        if plugin.id in by_id:
+            errors.append(RuleError(str(path), "id", "{!r} is already defined by {}".format(
+                plugin.id, by_id[plugin.id][1])))
+        else:
+            by_id[plugin.id] = (plugin, path)
+    return [plugin for plugin, _ in by_id.values()], errors
+
+
+def run_rules(events, rules, plugins=()):
+    """Apply every rule to every event, then every plugin to all of them.
+
+    Always a two-tuple (alerts, failures). `failures` is a list of
+    (rule_id, message), one per failing rule or plugin.
+    """
+    events = list(events)
     alerts, failures, reported, trackers = [], [], set(), {}
     for event in events:
         for i, rule in enumerate(rules):
@@ -137,7 +243,12 @@ def run_rules(events, rules, plugins=()):
             except Exception as exc:
                 if i not in reported:
                     reported.add(i)
-                    message = str(exc) if isinstance(exc, ValueError) else (
-                        "{}: {}".format(type(exc).__name__, exc))
-                    failures.append((rule.id, _one_line(message)))
+                    failures.append(_failure(rule.id, exc))
+    for plugin in plugins:
+        try:
+            # list() inside the try: a generator that fails halfway costs the
+            # whole plugin, not a random prefix of its alerts.
+            alerts.extend(list(plugin.evaluate(events)))
+        except Exception as exc:
+            failures.append(_failure(plugin.id, exc))
     return alerts, failures

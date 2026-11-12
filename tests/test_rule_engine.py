@@ -217,7 +217,8 @@ class TestNone(unittest.TestCase):
     def test_a_null_entity_is_empty_text_not_none(self):
         rule = rule_from_yaml(PER_EVENT.replace("fields: [host, user]",
                                                 "fields: [user]"))
-        self.assertEqual(("user", ""), entity_for(rule, event(user=None)))
+        # host=None too: a known host is where R90 now falls back to.
+        self.assertEqual(("user", ""), entity_for(rule, event(user=None, host=None)))
 
 
 class TestEntityAssignment(unittest.TestCase):
@@ -229,6 +230,41 @@ class TestEntityAssignment(unittest.TestCase):
     def test_a_per_event_rule_takes_its_entity_from_fields_zero(self):
         rule = rule_from_yaml(PER_EVENT)
         self.assertEqual(("host", "PC-01"), entity_for(rule, event(host="PC-01")))
+
+    # R90: an entity of "-" (Windows' "not recorded") would pool every
+    # unrelated alert of that rule into one incident, whatever host it came from.
+    def test_an_unknown_first_field_falls_back_to_the_next_declared_field(self):
+        rule = rule_from_yaml(PER_EVENT.replace("fields: [host, user]",
+                                                "fields: [user, source_ip, host]"))
+        self.assertEqual(("ip", "9.9.9.9"), entity_for(
+            rule, event(user="-", source_ip="9.9.9.9", host="PC-01")))
+
+    def test_an_empty_or_null_first_field_also_falls_back(self):
+        rule = rule_from_yaml(PER_EVENT.replace("fields: [host, user]",
+                                                "fields: [user, host]"))
+        for unknown in ("", None, "-"):
+            self.assertEqual(("host", "PC-01"),
+                             entity_for(rule, event(user=unknown, host="PC-01")), unknown)
+
+    def test_with_every_declared_field_unknown_it_falls_back_to_host(self):
+        # host need not be declared: parse_event_xml requires Computer, so it
+        # is never "-".
+        rule = rule_from_yaml(PER_EVENT.replace("fields: [host, user]",
+                                                "fields: [user, target_user]"))
+        self.assertEqual(("host", "PC-01"),
+                         entity_for(rule, event(user="-", target_user="-", host="PC-01")))
+
+    def test_a_known_first_field_is_not_replaced(self):
+        rule = rule_from_yaml(PER_EVENT.replace("fields: [host, user]",
+                                                "fields: [user, host]"))
+        self.assertEqual(("user", "alice"),
+                         entity_for(rule, event(user="alice", host="PC-01")))
+
+    def test_a_threshold_rule_whose_group_by_zero_is_unknown_falls_back_too(self):
+        rule = rule_from_yaml(THRESHOLD.replace("fields: [source_ip, target_user]",
+                                                "fields: [source_ip, target_user, host]"))
+        self.assertEqual(("user", "alice"), entity_for(
+            rule, event(source_ip="-", target_user="alice", host="PC-01")))
 
     def test_the_field_to_entity_type_map_covers_the_spec(self):
         self.assertEqual("ip", ENTITY_TYPES["source_ip"])
@@ -408,11 +444,6 @@ class TestRobustness(unittest.TestCase):
         alerts, _ = run_rules(iter([event(event_id=1102)]),
                               [rule_from_yaml(PER_EVENT), second])
         self.assertEqual(2, len(alerts))
-
-    def test_plugins_are_refused_until_they_exist(self):
-        # Silently ignoring them would drop detections without a word.
-        with self.assertRaises(NotImplementedError):
-            run_rules([], [], plugins=[object()])
 
 
 if __name__ == "__main__":

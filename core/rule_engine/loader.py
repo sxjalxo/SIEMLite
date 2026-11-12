@@ -77,6 +77,7 @@ class Rule:
     status: str
     selections: dict
     condition: Condition
+    condition_text: str
     timeframe: Optional[timedelta]
     count_gte: Optional[int]
     group_by: tuple
@@ -138,11 +139,15 @@ def _reject_unknown(mapping, allowed, key, fail):
                 name, ", ".join(allowed)))
 
 
-def _duplicate_key(root):
+def duplicate_key(root):
     """The first mapping key that appears twice in a composed YAML tree, or None.
 
     safe_load keeps the last of two equal keys, so the first would vanish
     silently. Works on the node tree compose() builds, which constructs nothing.
+
+    Public because core/response.py loads playbook files the same way (ruling
+    R119): for a rule the last of two `detection:` keys still fires, but for a
+    playbook a duplicated `actions:` silently drops a whole list of actions.
     Iterative with a visited set: an alias shares nodes, and a deeply nested or
     alias-heavy file must not recurse or loop.
     """
@@ -224,7 +229,7 @@ def load_rule_file(path):
 
     try:
         text = Path(path).read_text(encoding="utf-8")
-        duplicate = _duplicate_key(yaml.compose(text, Loader=yaml.SafeLoader))
+        duplicate = duplicate_key(yaml.compose(text, Loader=yaml.SafeLoader))
         data = yaml.safe_load(text)
     except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
         raise fail(None, "cannot read: {}".format(" ".join(str(exc).split())))
@@ -288,6 +293,7 @@ def load_rule_file(path):
         status=_text(data.get("status"), "status", fail, False),
         selections=selections,
         condition=condition,
+        condition_text=detection["condition"],
         timeframe=timeframe,
         count_gte=count_gte,
         group_by=group_by,

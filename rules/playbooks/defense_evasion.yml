@@ -1,0 +1,35 @@
+id: pb-defense-evasion
+title: Defense Evasion - Log Clearing And Audit Tampering Response
+match:
+  tactic: TA0005
+  min_severity: MEDIUM
+actions:
+  - name: Capture the current audit policy before anything else changes it
+    command: ['auditpol', '/get', '/category:*']
+    risk: low
+  - name: Show the state of the Windows Event Log service
+    command: ['sc', 'query', 'EventLog']
+    risk: low
+  - name: Show what the Security log retains now
+    command: ['wevtutil', 'gli', 'Security']
+    risk: low
+  - name: Show the account that cleared the log
+    command: ['net', 'user', '{user}']
+    risk: low
+  - name: Preserve what is left of the log off the host
+    manual: true
+    guidance: >
+      Export the remaining records with
+      `wevtutil epl Security <path>.evtx` and copy them somewhere the host
+      cannot reach. Not automated - the destination is a decision about
+      evidence handling, and writing an export onto the host being
+      investigated overwrites free space that may still hold the cleared
+      records.
+  - name: Restore the audit policy and find out what was disabled
+    manual: true
+    guidance: >
+      Compare the captured `auditpol /get` output with the baseline, then
+      re-enable the missing subcategories with `auditpol /set`. Not
+      automated - re-applying a whole policy can switch on auditing a domain
+      policy deliberately switched off, and it would also destroy the
+      evidence of which subcategories the intruder chose.

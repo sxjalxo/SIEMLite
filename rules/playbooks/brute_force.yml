@@ -1,0 +1,26 @@
+id: pb-brute-force
+title: Credential Access - Brute Force Response
+match:
+  tactic: TA0006
+  min_severity: HIGH
+actions:
+  - name: Block source IP at host firewall
+    command: ['netsh', 'advfirewall', 'firewall', 'add', 'rule',
+              'name=SIEM-Block-{source_ip}', 'dir=in', 'action=block',
+              'remoteip={source_ip}']
+    undo:    ['netsh', 'advfirewall', 'firewall', 'delete', 'rule',
+              'name=SIEM-Block-{source_ip}']
+    risk: medium
+  - name: Disable targeted account
+    command: ['net', 'user', '{target_user}', '/active:no']
+    undo:    ['net', 'user', '{target_user}', '/active:yes']
+    risk: high
+  - name: Review active sessions for the account
+    command: ['query', 'user', '{target_user}']
+    risk: low
+  - name: Force logoff the session
+    manual: true
+    guidance: >
+      Identify the session id from `query user`, then run
+      `logoff <id>`. Not automated - logging off the wrong session
+      disrupts a legitimate user.

@@ -1,0 +1,38 @@
+id: win-ntlm-failure-burst
+title: NTLM Credential Validation Failure Burst
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4776
+    action: NTLM_VALIDATE
+    # 4776 is written for success and failure alike; Status is the only thing
+    # that tells them apart. 0x0 is success. Quoted: unquoted, YAML reads
+    # 0x0 as the integer 0, which can never equal the stored text '0x0', and
+    # the rule would count every successful validation. "-" is the stored
+    # default when no Status was recorded: an event that says nothing about
+    # the outcome is not evidence of a failure.
+    status|not: ['0x0', '-']
+  timeframe: 5m
+  count:
+    gte: 5
+    group_by: [target_user]
+  condition: sel
+mitre:
+  technique: T1110
+  tactic: TA0006
+fields: [target_user, object_name, status, host]
+description: >-
+  Five or more failed NTLM credential validations (EventID 4776, any Status
+  other than 0x0) for one account within five minutes, recorded by the machine
+  that validated them, usually a domain controller. Catches guessing against
+  an account over NTLM, which a rule on 4625 misses when the logon never
+  reached the target machine. object_name is the workstation the attempts
+  came from.
+falsepositives:
+  - A service, mapped drive or mail client retrying with a stale password
+  - A locked-out or disabled account (Status 0xc0000234, 0xc0000072) being retried by something that does not give up
+  - A legacy device or application that falls back to NTLM and fails repeatedly

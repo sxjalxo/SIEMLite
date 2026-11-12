@@ -237,6 +237,34 @@ MITRE_MAPPINGS = {
     },
 }
 
+# Flat tactic id -> name. Not derived from MITRE_MAPPINGS: that dict is keyed by
+# category, so a tactic with no category is missing from it.
+TACTIC_NAMES = {
+    # TA0043 and TA0042 come before TA0001 in the ATT&CK matrix, and TA0040 is
+    # last; this dict is by id, and `cli/commands/mitre.py:KILL_CHAIN` holds the
+    # matrix order. MITRE_MAPPINGS already emits TA0043 and TA0042, so without
+    # these three a kill-chain strip showed them as raw ids (ruling R103).
+    "TA0043": "Reconnaissance",
+    "TA0042": "Resource Development",
+    "TA0001": "Initial Access",
+    "TA0002": "Execution",
+    "TA0003": "Persistence",
+    "TA0004": "Privilege Escalation",
+    "TA0005": "Defense Evasion",
+    "TA0006": "Credential Access",
+    "TA0007": "Discovery",
+    "TA0008": "Lateral Movement",
+    "TA0009": "Collection",
+    "TA0010": "Exfiltration",
+    "TA0011": "Command and Control",
+    "TA0040": "Impact",
+}
+
+
+def tactic_name(tactic_id: str) -> str:
+    """The tactic's name, or the id unchanged when it is not known."""
+    return TACTIC_NAMES.get(tactic_id, tactic_id)
+
 
 # ─────────────────────────────────────────────
 # MITRE Mapping Functions

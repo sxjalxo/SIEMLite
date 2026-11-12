@@ -1,0 +1,27 @@
+id: win-admin-share-access
+title: Administrative Share Accessed
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 5140
+    action: SHARE_ACCESS
+    # Windows writes the share as \\*\NAME. ADMIN$ and the drive-letter shares
+    # (C$, D$ ...) are the ones used for remote file copy and execution.
+    # IPC$ is left out: every remote session opens it.
+    object_name|re: '^\\\\\*\\([a-z]\$|admin\$)$'
+  condition: sel
+mitre:
+  technique: T1021.002
+  tactic: TA0008
+fields: [source_ip, user, object_name, host]
+description: >-
+  A network share named ADMIN$ or a drive-letter share such as C$ was
+  accessed (EventID 5140). Used for lateral movement, for example by PsExec.
+  Needs the "File Share" audit subcategory enabled.
+falsepositives:
+  - Remote administration, backup agents and software deployment tools
+  - Access from the machine itself (source_ip is local)

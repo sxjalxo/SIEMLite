@@ -1,0 +1,23 @@
+id: win-scheduled-task-created
+title: Scheduled Task Created
+status: stable
+severity: MEDIUM
+logsource:
+  product: windows
+  service: security
+detection:
+  sel:
+    event_id: 4698
+    action: TASK_CREATE
+  condition: sel
+mitre:
+  technique: T1053.005
+  tactic: TA0003
+fields: [user, object_name, host]
+description: >-
+  A scheduled task was created (EventID 4698). object_name is the task name,
+  user the account that created it. Needs the "Other Object Access Events"
+  audit subcategory enabled.
+falsepositives:
+  - Software that registers its own updater task (browsers, office suites, vendor agents)
+  - Administrators deploying maintenance tasks
